@@ -256,19 +256,23 @@ __ckpt_compare_order(const void *a, const void *b)
  *     Load all available checkpoint information for a file.
  */
 int
-__wt_meta_ckptlist_get(WT_SESSION_IMPL *session, const char *fname, WT_CKPT **ckptbasep)
+__wt_meta_ckptlist_get(
+  WT_SESSION_IMPL *session, const char *fname, bool update, WT_CKPT **ckptbasep)
 {
     WT_CKPT *ckpt, *ckptbase;
     WT_CONFIG ckptconf;
     WT_CONFIG_ITEM k, v;
+    WT_CONNECTION_IMPL *conn;
     WT_DECL_ITEM(buf);
     WT_DECL_RET;
     size_t allocated, slot;
+    uint64_t most_recent;
     char *config;
 
     *ckptbasep = NULL;
 
     ckptbase = NULL;
+    conn = S2C(session);
     allocated = slot = 0;
     config = NULL;
 
@@ -301,6 +305,22 @@ __wt_meta_ckptlist_get(WT_SESSION_IMPL *session, const char *fname, WT_CKPT **ck
 
     /* Sort in creation-order. */
     __wt_qsort(ckptbase, slot, sizeof(WT_CKPT), __ckpt_compare_order);
+
+    if (update) {
+        ckpt = &ckptbase[slot];
+        __wt_seconds(session, &ckpt->sec);
+        /*
+         * Update time value for most recent checkpoint, not letting it move backwards. It is
+         * possible to race here, so use atomic CAS. This code relies on the fact that anyone we
+         * race with will only increase (never decrease) the most recent checkpoint time value.
+         */
+        for (;;) {
+            WT_ORDERED_READ(most_recent, conn->ckpt_most_recent);
+            if (ckpt->sec <= most_recent ||
+              __wt_atomic_cas64(&conn->ckpt_most_recent, most_recent, ckpt->sec))
+                break;
+        }
+    }
 
     /* Return the array to our caller. */
     *ckptbasep = ckptbase;
