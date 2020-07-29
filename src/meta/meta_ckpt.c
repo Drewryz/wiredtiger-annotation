@@ -266,6 +266,7 @@ __wt_meta_ckptlist_get(
     WT_DECL_ITEM(buf);
     WT_DECL_RET;
     size_t allocated, slot;
+    time_t secs;
     uint64_t most_recent;
     char *config;
 
@@ -308,7 +309,8 @@ __wt_meta_ckptlist_get(
 
     if (update) {
         ckpt = &ckptbase[slot];
-        __wt_seconds(session, &ckpt->sec);
+        __wt_seconds(session, &secs);
+        ckpt->sec = (uint64_t)secs;
         /*
          * Update time value for most recent checkpoint, not letting it move backwards. It is
          * possible to race here, so use atomic CAS. This code relies on the fact that anyone we
