@@ -1,3 +1,12 @@
+# WiredTiger data files
+WiredTiger*
+*.wt
+*.lock
+*.basecfg
+
+# Execute files
+*.out
+
 # Editor files
 *.swp
 
