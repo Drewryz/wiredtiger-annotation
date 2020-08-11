@@ -14,7 +14,7 @@ int main() {
     /* Create table. */
     session->create(session, "table:aaa/my_table", "key_format=S,value_format=S");
 
-    session->open_cursor(session, "table:my_table", NULL, NULL, &cursor);
+    session->open_cursor(session, "table:aaa/my_table", NULL, NULL, &cursor);
     cursor->set_key(cursor, "key1");
     cursor->set_value(cursor, "val1");
     cursor->insert(cursor);
