@@ -188,6 +188,7 @@ __wt_readlock(WT_SESSION_IMPL *session, WT_RWLOCK *l)
         /*
          * Fast path: if there is no active writer, join the current group.
          */
+        // (yangzaorang) 如果current等于next，则说明没有writer
         for (old.u.v = l->u.v; old.u.s.current == old.u.s.next; old.u.v = l->u.v) {
             new.u.v = old.u.v;
             /*

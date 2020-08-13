@@ -40,7 +40,7 @@
 #define API_SESSION_POP(s)  \
     (s)->dhandle = __olddh; \
     (s)->name = __oldname
-
+// session, WT_CURSOR, insert, ((WT_BTREE *)(bt))->dhandle
 /* Standard entry points to the API: declares/initializes local variables. */
 #define API_SESSION_INIT(s, h, n, dh)                              \
     WT_TRACK_OP_DECL;                                              \
@@ -57,7 +57,7 @@
     if (__oldname == NULL)                                         \
         (s)->cache_wait_us = 0;                                    \
     __wt_verbose((s), WT_VERB_API, "%s", "CALL: " #h ":" #n)
-
+// session, WT_CURSOR, insert, ((WT_BTREE *)(bt))->dhandle
 #define API_CALL_NOCONF(s, h, n, dh) \
     do {                             \
     API_SESSION_INIT(s, h, n, dh)
@@ -97,7 +97,7 @@
         __update = !F_ISSET(&(s)->txn, WT_TXN_UPDATE);                       \
         if (__update)                                                        \
             F_SET(&(s)->txn, WT_TXN_UPDATE);
-
+// session, WT_CURSOR, insert, ((WT_BTREE *)(bt))->dhandle
 /* An API call wrapped in a transaction if necessary. */
 #define TXN_API_CALL_NOCONF(s, h, n, dh)                                     \
     do {                                                                     \
@@ -178,7 +178,7 @@
 #define SESSION_API_CALL_PREPARE_NOT_ALLOWED_NOCONF(s, n) \
     SESSION_API_PREPARE_CHECK(s, WT_SESSION, n);          \
     API_CALL_NOCONF(s, WT_SESSION, n, NULL)
-
+// TODO: (yangzaorang) 这里要检测当前的session的事务状态不能为prepare，至于为什么，现在还未知
 #define SESSION_API_PREPARE_CHECK(s, h, n)                 \
     do {                                                   \
         int __prepare_ret;                                 \

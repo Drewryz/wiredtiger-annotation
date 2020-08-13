@@ -139,7 +139,7 @@ __wt_txn_release_snapshot(WT_SESSION_IMPL *session)
 
     __wt_txn_clear_read_timestamp(session);
 }
-
+// (yangzaorang) 过瘾呀，过瘾，昏昏沉沉，终于读到了获取快照这一块代码
 /*
  * __wt_txn_get_snapshot --
  *     Allocate a snapshot.
@@ -155,8 +155,8 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
     uint32_t i, n, session_cnt;
 
     conn = S2C(session);
-    txn = &session->txn;
-    txn_global = &conn->txn_global;
+    txn = &session->txn; // session事务管理 (yangzaorang)
+    txn_global = &conn->txn_global; // 全局事务管理 (yangzaorang)
     txn_state = WT_SESSION_TXN_STATE(session);
     n = 0;
 
@@ -167,10 +167,10 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
         __wt_session_gen_leave(session, WT_GEN_COMMIT);
     }
     __wt_session_gen_enter(session, WT_GEN_COMMIT);
-
+    // (yangzaorang) 目测锁和事务都是被全局管理的，同一个conn的session彼此共享 
     /* We're going to scan the table: wait for the lock. */
     __wt_readlock(session, &txn_global->rwlock);
-
+    // TODO: (yangzaorang) reading here. 2020.8.12-9:38
     current_id = pinned_id = txn_global->current;
     prev_oldest_id = txn_global->oldest_id;
 

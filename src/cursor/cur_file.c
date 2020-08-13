@@ -7,6 +7,7 @@
  */
 
 #include "wt_internal.h"
+#include <stdio.h>
 
 /*
  * Define functions that increment histogram statistics for cursor read and write operations
@@ -255,6 +256,7 @@ __curfile_insert(WT_CURSOR *cursor)
 
     cbt = (WT_CURSOR_BTREE *)cursor;
     CURSOR_UPDATE_API_CALL_BTREE(cursor, session, insert, cbt->btree);
+    printf("!!!! %d\n", S2C(session)->flags);
     WT_ERR(__cursor_copy_release(cursor));
 
     if (!F_ISSET(cursor, WT_CURSTD_APPEND))
