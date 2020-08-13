@@ -49,6 +49,7 @@ WiredTiger*
 /wiredtiger_config.h
 /wiredtiger_ext.h
 /wt
+compiled/
 Makefile
 Makefile.in
 build_posix/config.log
