@@ -136,7 +136,7 @@ struct __wt_session_impl {
     WT_LSN bg_sync_lsn; /* Background sync operation LSN. */
     u_int ncursors;     /* Count of active file cursors. */
 
-    void *block_manager; /* Block-manager support */
+    void *block_manager; /* Block-manager support */ // WT_BLOCK_MGR_SESSION
     int (*block_manager_cleanup)(WT_SESSION_IMPL *);
 
     /* Checkpoint handles */
@@ -226,7 +226,7 @@ struct __wt_session_impl {
 #define WT_GEN_HAZARD 3     /* Hazard pointer */
 #define WT_GEN_SPLIT 4      /* Page splits */
 #define WT_GENERATIONS 5    /* Total generation manager entries */
-    volatile uint64_t generations[WT_GENERATIONS];
+    volatile uint64_t generations[WT_GENERATIONS]; // conn对象也有同样的这个东西，目测是个锁
 
     /*
      * Session memory persists past session close because it's accessed by threads of control other

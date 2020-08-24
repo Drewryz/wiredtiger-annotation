@@ -553,7 +553,7 @@ __bm_method_set(WT_BM *bm, bool readonly)
     bm->addr_invalid = __bm_addr_invalid;
     bm->addr_string = __bm_addr_string;
     bm->block_header = __bm_block_header;
-    bm->checkpoint = __bm_checkpoint;
+    bm->checkpoint = __bm_checkpoint;  // TODO: reading here. 2020-8-20-22:27
     bm->checkpoint_last = __bm_checkpoint_last;
     bm->checkpoint_load = __bm_checkpoint_load;
     bm->checkpoint_resolve = __bm_checkpoint_resolve;
@@ -580,7 +580,7 @@ __bm_method_set(WT_BM *bm, bool readonly)
     bm->verify_addr = __bm_verify_addr;
     bm->verify_end = __bm_verify_end;
     bm->verify_start = __bm_verify_start;
-    bm->write = __bm_write;
+    bm->write = __bm_write;  // 已读完
     bm->write_size = __bm_write_size;
 
     if (readonly) {
@@ -604,12 +604,13 @@ __bm_method_set(WT_BM *bm, bool readonly)
 
 /*
  * __wt_block_manager_open --
- *     Open a file.
+ *     Open a file. 这里的file就是*.wt文件, 所以，一个block manager对应一个文件
  */
 int
 __wt_block_manager_open(WT_SESSION_IMPL *session, const char *filename, const char *cfg[],
   bool forced_salvage, bool readonly, uint32_t allocsize, WT_BM **bmp)
 {
+    MY_PRINTF("yui %s\n", filename);
     WT_BM *bm;
     WT_DECL_RET;
 

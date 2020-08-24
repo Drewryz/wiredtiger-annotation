@@ -149,8 +149,10 @@ __wt_block_open(WT_SESSION_IMPL *session, const char *filename, const char *cfg[
     hash = __wt_hash_city64(filename, strlen(filename));
     bucket = hash % WT_HASH_ARRAY_SIZE;
     __wt_spin_lock(session, &conn->block_lock);
+    // 相同的文件对应同一个__wt_block, 如果已经分配了wt_block，直接返回
+    // for ((block) = TAILQ_FIRST((&conn->blockhash[bucket])); (block); (block) = TAILQ_NEXT((block), hashq))
     TAILQ_FOREACH (block, &conn->blockhash[bucket], hashq) {
-        if (strcmp(filename, block->name) == 0) {
+        if (strcmp(filename, block->name) == 0) { 
             ++block->ref;
             *blockp = block;
             __wt_spin_unlock(session, &conn->block_lock);
@@ -169,21 +171,23 @@ __wt_block_open(WT_SESSION_IMPL *session, const char *filename, const char *cfg[
     block->ref = 1;
     block->name_hash = hash;
     block->allocsize = allocsize;
+    // TAILQ的宏真鸡儿难读，这一行代码是将block插入全局哈希表和全局链表中
+    // do { TAILQ_INSERT_HEAD(&(conn)->blockqh, block, q); TAILQ_INSERT_HEAD(&(conn)->blockhash[bucket], block, hashq); } while (0)
     WT_CONN_BLOCK_INSERT(conn, block, bucket);
 
     WT_ERR(__wt_strdup(session, filename, &block->name));
-
+    // block分配方式，参见：https://source.wiredtiger.com/3.2.1/struct_w_t___s_e_s_s_i_o_n.html#a358ca4141d59c345f401c58501276bbb
     WT_ERR(__wt_config_gets(session, cfg, "block_allocation", &cval));
     block->allocfirst = WT_STRING_MATCH("first", cval.str, cval.len);
-
+    // os_cache_max这是个什么玩意
     /* Configuration: optional OS buffer cache maximum size. */
     WT_ERR(__wt_config_gets(session, cfg, "os_cache_max", &cval));
     block->os_cache_max = (size_t)cval.val;
-
+    // ???
     /* Configuration: optional immediate write scheduling flag. */
     WT_ERR(__wt_config_gets(session, cfg, "os_cache_dirty_max", &cval));
     block->os_cache_dirty_max = (size_t)cval.val;
-
+    // ???
     /* Set the file extension information. */
     block->extend_len = conn->data_extend_len;
 
@@ -193,12 +197,13 @@ __wt_block_open(WT_SESSION_IMPL *session, const char *filename, const char *cfg[
      * "direct_io=checkpoint" configures direct I/O for readonly data files.
      */
     flags = 0;
+    // access_pattern_hint解释：It is recommended that workloads that consist primarily of updates and/or point queries specify random. Workloads that do many cursor scans through large ranges of data specify sequential and other workloads specify none. The option leads to an advisory call to an appropriate operating system API where available.	
     WT_ERR(__wt_config_gets(session, cfg, "access_pattern_hint", &cval));
     if (WT_STRING_MATCH("random", cval.str, cval.len))
         LF_SET(WT_FS_OPEN_ACCESS_RAND);
     else if (WT_STRING_MATCH("sequential", cval.str, cval.len))
         LF_SET(WT_FS_OPEN_ACCESS_SEQ);
-
+    // direct_io: 和linux 文件io相关，http://source.wiredtiger.com/2.3.1/group__wt.html#ga9e6adae3fc6964ef837a62795c7840ed
     if (readonly && FLD_ISSET(conn->direct_io, WT_DIRECT_IO_CHECKPOINT))
         LF_SET(WT_FS_OPEN_DIRECTIO);
     if (!readonly && FLD_ISSET(conn->direct_io, WT_DIRECT_IO_DATA))
@@ -266,6 +271,7 @@ __wt_block_close(WT_SESSION_IMPL *session, WT_BLOCK *block)
 int
 __wt_desc_write(WT_SESSION_IMPL *session, WT_FH *fh, uint32_t allocsize)
 {
+    MY_PRINTF("%s [mark]\n", fh->name);
     WT_BLOCK_DESC *desc;
     WT_DECL_ITEM(buf);
     WT_DECL_RET;

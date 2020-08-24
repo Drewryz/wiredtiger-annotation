@@ -6,6 +6,11 @@
  * See the file LICENSE for redistribution information.
  */
 
+// 可变长度整数编码，参见:
+// https://www.jianshu.com/p/a52c16fca39e
+// https://stackoverflow.com/questions/14096119/what-is-this-variable-length-integer-encoding
+// https://en.wikipedia.org/wiki/Variable-length_quantity
+
 /*
  * Variable-length integer encoding.
  * We need up to 64 bits, signed and unsigned.  Further, we want the packed
@@ -180,6 +185,7 @@ __wt_vunpack_negint(const uint8_t **pp, size_t maxlen, uint64_t *retp)
     return (0);
 }
 
+// 将值x进行可变长度编码写入位置*p, *p++
 /*
  * __wt_vpack_uint --
  *     Variable-sized packing for unsigned integers

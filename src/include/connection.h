@@ -236,8 +236,8 @@ struct __wt_connection_impl {
     TAILQ_HEAD(__wt_dlh_qh, __wt_dlh) dlhqh;
 
     WT_SPINLOCK block_lock; /* Locked: block manager list */
-    TAILQ_HEAD(__wt_blockhash, __wt_block) blockhash[WT_HASH_ARRAY_SIZE];
-    TAILQ_HEAD(__wt_block_qh, __wt_block) blockqh;
+    TAILQ_HEAD(__wt_blockhash, __wt_block) blockhash[WT_HASH_ARRAY_SIZE]; // 存储block的hash表（拉链法）struct __wt_blockhash { struct __wt_block *tqh_first; struct __wt_block **tqh_last; TRACEBUF }
+    TAILQ_HEAD(__wt_block_qh, __wt_block) blockqh; // struct __wt_block_qh { struct __wt_block *tqh_first; struct __wt_block **tqh_last; TRACEBUF }
 
     /* Locked: handles in each bucket */
     u_int dh_bucket_count[WT_HASH_ARRAY_SIZE];

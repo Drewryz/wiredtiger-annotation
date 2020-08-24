@@ -28,6 +28,8 @@ __wt_buf_grow_worker(WT_SESSION_IMPL *session, WT_ITEM *buf, size_t size)
      *	Existing data not-local to the buffer: copy the data into the
      * buffer and set the data to reference it.
      */
+((buf)->mem != NULL && (buf)->data >= (buf)->mem && WT_PTRDIFF((buf)->data, (buf)->mem) < (buf)->memsize)
+
     if (WT_DATA_IN_ITEM(buf)) {
         offset = WT_PTRDIFF(buf->data, buf->mem);
         copy_data = false;

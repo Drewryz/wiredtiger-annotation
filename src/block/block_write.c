@@ -180,6 +180,8 @@ __wt_block_write_size(WT_SESSION_IMPL *session, WT_BLOCK *block, size_t *sizep)
     return (*sizep > UINT32_MAX - 1024 ? EINVAL : 0);
 }
 
+// addr是输出参数，用于存放写入的数据地址:offset size checksum， 这三个变量都是经过可变长度编码的
+// addr_sizep也是输出参数，表示上面三个东西占用的size
 /*
  * __wt_block_write --
  *     Write a buffer into a block, returning the block's address cookie.
@@ -202,6 +204,11 @@ __wt_block_write(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, uint8_
     return (0);
 }
 
+// 该函数完成了block指向的数据往磁盘写，主要步骤：
+// 1. 从 Live checkpoint的avaliable链表中，找到可用的extent，找不到则在文件末尾新分配空间
+// 2. 在找到的extent或者新分配的extent中，写入数据
+// 3. fsync（条件判断后做）
+// 4. 删除操作系统缓冲的对应数据的cache
 /*
  * __block_write_off --
  *     Write a buffer into a block, returning the block's offset, size and checksum.
@@ -231,6 +238,8 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
         WT_RET_MSG(session, EINVAL, "direct I/O check: write buffer incorrectly allocated");
     }
 
+    // Append metadata and checkpoint information to a buffer.
+    // 这里的file_sizep是记录底层存储文件的指针
     /*
      * File checkpoint/recovery magic: done before sizing the buffer as it may grow the buffer.
      */
@@ -254,6 +263,7 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
         WT_RET_MSG(session, EINVAL, "buffer size check: write buffer too large to write");
     }
 
+    // 预先分配一些extent的结构体，并没有实际写入数据
     /* Pre-allocate some number of extension structures. */
     WT_RET(__wt_block_ext_prealloc(session, 5));
 
@@ -267,9 +277,10 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
         __wt_spin_lock(session, &block->live_lock);
         local_locked = true;
     }
+    // 找到可写入的位置
     ret = __wt_block_alloc(session, block, &offset, (wt_off_t)align_size);
     if (ret == 0)
-        ret = __wt_block_extend(session, block, fh, offset, align_size, &local_locked);
+        ret = __wt_block_extend(session, block, fh, offset, align_size, &local_locked); // TODO: 这个函数没有太明白
     if (local_locked)
         __wt_spin_unlock(session, &block->live_lock);
     WT_RET(ret);
@@ -279,11 +290,12 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
      * checkpoint's information inline.
      */
     if (block->final_ckpt != NULL)
-        WT_RET(__wt_vpack_uint(&file_sizep, 0, (uint64_t)block->size));
+        WT_RET(__wt_vpack_uint(&file_sizep, 0, (uint64_t)block->size)); // 将文件大小写入buffer中
 
     /* Zero out any unused bytes at the end of the buffer. */
     memset((uint8_t *)buf->mem + buf->size, 0, align_size - buf->size);
 
+    // TODO: WT_ITEM *buf中还有block header，可以想见，一个WT_ITEM应该是一个page
     /*
      * Clear the block header to ensure all of it is initialized, even the unused fields.
      */
@@ -321,7 +333,7 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
     blk->checksum = __wt_bswap32(blk->checksum);
 #endif
 
-    /* Write the block. */
+    /* Write the block. */ // 完成实际的写入数据
     if ((ret = __wt_write(session, fh, offset, align_size, buf->mem)) != 0) {
         if (!caller_locked)
             __wt_spin_lock(session, &block->live_lock);

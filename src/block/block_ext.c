@@ -443,6 +443,7 @@ __wt_block_off_remove_overlap(
     return (0);
 }
 
+// offp指向文件末尾，然后调整file size，但是并没有实际写入数据
 /*
  * __block_extend --
  *     Extend the file to allocate space.
@@ -467,7 +468,7 @@ __block_extend(WT_SESSION_IMPL *session, WT_BLOCK *block, wt_off_t *offp, wt_off
      */
     if (block->size > (wt_off_t)INT64_MAX - size)
         WT_RET_MSG(session, WT_ERROR, "block allocation failed, file cannot grow further");
-
+    // 分配新空间从文件最末尾开始
     *offp = block->size;
     block->size += size;
 
@@ -478,6 +479,7 @@ __block_extend(WT_SESSION_IMPL *session, WT_BLOCK *block, wt_off_t *offp, wt_off
     return (0);
 }
 
+// offp写入数据的起始位置
 /*
  * __wt_block_alloc --
  *     Alloc a chunk of space from the underlying file.
@@ -511,7 +513,8 @@ __wt_block_alloc(WT_SESSION_IMPL *session, WT_BLOCK *block, wt_off_t *offp, wt_o
      *
      * If we don't have anything big enough, extend the file.
      */
-    if (block->live.avail.bytes < (uint64_t)size)
+    // 先从可用链表中获取
+    if (block->live.avail.bytes < (uint64_t)size) 
         goto append;
     if (block->allocfirst) {
         if (!__block_first_srch(block->live.avail.off, size, estack))

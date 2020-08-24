@@ -5,7 +5,9 @@
  *
  * See the file LICENSE for redistribution information.
  */
-
+// (yangzaorang)
+// 几乎所有的wt的c文件都要引入这个头文件
+// extern.h全部是函数的声明，可以理解extern.h定义了public方法
 #ifndef __WT_INTERNAL_H
 #define __WT_INTERNAL_H
 
@@ -13,6 +15,15 @@
 extern "C" {
 #endif
 
+// (yangzaorang)
+#include <stdio.h>
+
+#define __MY_PRINTF
+#ifdef __MY_PRINTF
+#define MY_PRINTF(format, ...) printf(format, ##__VA_ARGS__) // 为了防止空的可变参数，对于gcc来说，需要在__VA_ARGS__加##
+#else
+#define MY_PRINTF(format, ...)
+#endif
 /*******************************************
  * WiredTiger public include file, and configuration control.
  *******************************************/

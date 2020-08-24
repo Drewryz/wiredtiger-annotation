@@ -17,6 +17,7 @@ __wt_buf_grow(WT_SESSION_IMPL *session, WT_ITEM *buf, size_t size)
       size > buf->memsize || !WT_DATA_IN_ITEM(buf) ? __wt_buf_grow_worker(session, buf, size) : 0);
 }
 
+// 将buf的size增长到size，但是buf->size数值没有变化
 /*
  * __wt_buf_extend --
  *     Grow a buffer that's currently in-use.

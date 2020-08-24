@@ -41,6 +41,7 @@
  * list, the alloc and discard extent lists are not searched based on size.
  */
 
+// segment -> extent -> page || 段 -> 区 -> 页
 /*
  * WT_EXTLIST --
  *	An extent list.
@@ -136,16 +137,18 @@ struct __wt_size {
  * 14 packed 8B values.
  */
 #define WT_BLOCK_CHECKPOINT_BUFFER (1 + 14 * WT_INTPACK64_MAXSIZE)
-
+// (yangzaorang) 参见: https://mongoing.com/archives/73180
+// TODO: (yangzaorang) reading here.
+// TODO: 读wt github wiki
 struct __wt_block_ckpt {
     uint8_t version; /* Version */
 
     wt_off_t root_offset; /* The root */
     uint32_t root_checksum, root_size;
-
+    
     WT_EXTLIST alloc;   /* Extents allocated */
     WT_EXTLIST avail;   /* Extents available */
-    WT_EXTLIST discard; /* Extents discarded */
+    WT_EXTLIST discard; /* Extents discarded */ // TODO: discard的space为什么wt不选择复用呢？
 
     wt_off_t file_size; /* Checkpoint file size */
     uint64_t ckpt_size; /* Checkpoint byte count */
@@ -218,13 +221,13 @@ struct __wt_bm {
  *	Block manager handle, references a single file.
  */
 struct __wt_block {
-    const char *name;   /* Name */
+    const char *name;   /* Name */ // 对应的文件名
     uint64_t name_hash; /* Hash of name */
 
     /* A list of block manager handles, sharing a file descriptor. */
     uint32_t ref;                  /* References */
-    TAILQ_ENTRY(__wt_block) q;     /* Linked list of handles */
-    TAILQ_ENTRY(__wt_block) hashq; /* Hashed list of handles */
+    TAILQ_ENTRY(__wt_block) q;     /* Linked list of handles */  // struct { struct __wt_block *tqe_next; struct __wt_block **tqe_prev; TRACEBUF }
+    TAILQ_ENTRY(__wt_block) hashq; /* Hashed list of handles */  // struct { struct __wt_block *tqe_next; struct __wt_block **tqe_prev; TRACEBUF }
 
     WT_FH *fh;            /* Backing file handle */
     wt_off_t size;        /* File size */
@@ -232,8 +235,8 @@ struct __wt_block {
     wt_off_t extend_len;  /* File extend chunk size */
 
     /* Configuration information, set when the file is opened. */
-    uint32_t allocfirst; /* Allocation is first-fit */
-    uint32_t allocsize;  /* Allocation size */
+    uint32_t allocfirst; /* Allocation is first-fit */ // block分配方式, 参见：https://source.wiredtiger.com/3.2.1/tune_file_alloc.html
+    uint32_t allocsize;  /* Allocation size */ // 每次分片空间时的单位
     size_t os_cache;     /* System buffer cache flush max */
     size_t os_cache_max;
     size_t os_cache_dirty_max;
@@ -258,8 +261,10 @@ struct __wt_block {
         WT_CKPT_PANIC_ON_FAILURE,
         WT_CKPT_SALVAGE
     } ckpt_state;
-
-    WT_CKPT *final_ckpt; /* Final live checkpoint write */
+    // 关于检查点: 
+    // https://github.com/wiredtiger/wiredtiger/wiki/Checkpoints
+    // https://mongoing.com/archives/73180
+    WT_CKPT *final_ckpt; /* Final live checkpoint write */ // CKPT这里的作用是什么 TODO: (yangzaorang)
 
     /* Compaction support */
     int compact_pct_tenths;          /* Percent to compact */
@@ -279,7 +284,7 @@ struct __wt_block {
     uint64_t frags;          /* Maximum frags in the file */
     uint8_t *fragfile;       /* Per-file frag tracking list */
     uint8_t *fragckpt;       /* Per-checkpoint frag tracking list */
-};
+}; // 磁盘上一个文件
 
 /*
  * WT_BLOCK_DESC --
@@ -296,7 +301,7 @@ struct __wt_block_desc {
     uint32_t checksum; /* 08-11: Description block checksum */
 
     uint32_t unused; /* 12-15: Padding */
-};
+}; // 磁盘上文件的文件头
 /*
  * WT_BLOCK_DESC_SIZE is the expected structure size -- we verify the build to ensure the compiler
  * hasn't inserted padding (padding won't cause failure, we reserve the first allocation-size block
@@ -320,7 +325,18 @@ __wt_block_desc_byteswap(WT_BLOCK_DESC *desc)
     WT_UNUSED(desc);
 #endif
 }
-
+// (yangzaorang) 
+// wt的数据文件在磁盘上表示为一个文件，
+// 这一个文件包含了所有的b树的page页, 
+// b树管理的粒度是page
+// 参见：
+// https://mongoing.com/archives/35143
+// https://mongoing.com/archives/57177
+// https://mongoing.com/archives/73180
+// https://mongoing.com/archives/74064
+// https://mongoing.com/archives/29934
+// TODO: (yangzaorang) b树怎么存数据 <<数据结构与算法分析>>
+// WT_PAGE_HEADER | WT_BLOCK_HEADER
 /*
  * WT_BLOCK_HEADER --
  *	Blocks have a common header, a WT_PAGE_HEADER structure followed by a

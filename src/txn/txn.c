@@ -170,7 +170,6 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
     // (yangzaorang) 目测锁和事务都是被全局管理的，同一个conn的session彼此共享 
     /* We're going to scan the table: wait for the lock. */
     __wt_readlock(session, &txn_global->rwlock);
-    // TODO: (yangzaorang) reading here. 2020.8.12-9:38
     current_id = pinned_id = txn_global->current;
     prev_oldest_id = txn_global->oldest_id;
 
@@ -179,7 +178,7 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
      * changes the checkpoint has written to the metadata. We don't have to keep the checkpoint's
      * changes pinned so don't including it in the published pinned ID.
      */
-    if ((id = txn_global->checkpoint_state.id) != WT_TXN_NONE) {
+    if ((id = txn_global->checkpoint_state.id) != WT_TXN_NONE) { // TODO: (yangzaorang) 这里没有看明白...
         txn->snapshot[n++] = id;
         txn_state->metadata_pinned = id;
     }

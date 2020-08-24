@@ -383,14 +383,15 @@ __cursor_col_search(WT_CURSOR_BTREE *cbt, WT_REF *leaf, bool *leaf_foundp)
  *     Row-store search from a cursor.
  */
 static inline int
-__cursor_row_search(WT_CURSOR_BTREE *cbt, bool insert, WT_REF *leaf, bool *leaf_foundp)
+__cursor_row_search(WT_CURSOR_BTREE *cbt, bool insert, WT_REF *leaf, bool *leaf_foundp)  // cbt, true, NULL, NULL
 {
     WT_DECL_RET;
     WT_SESSION_IMPL *session;
 
     session = (WT_SESSION_IMPL *)cbt->iface.session;
+    // TODO: (yangzaorang) reading here 2020.8.17
     WT_WITH_PAGE_INDEX(
-      session, ret = __wt_row_search(cbt, &cbt->iface.key, insert, leaf, false, leaf_foundp));
+      session, ret = __wt_row_search(cbt, &cbt->iface.key, insert, leaf, false, leaf_foundp)); // cbt &cbt->iface.key true  null false null
     return (ret);
 }
 
@@ -843,14 +844,14 @@ __wt_btcur_insert(WT_CURSOR_BTREE *cbt)
     /*
      * The pinned page goes away if we do a search, get a local copy of any pinned key or value.
      * Re-save the cursor state: we may retry but eventually fail.
-     */ // TODO: 什么意思？
+     */ // TODO: 什么意思？(yangzaorang)
     WT_ERR(__cursor_localkey(cursor));
     WT_ERR(__cursor_localvalue(cursor));
     __cursor_state_save(cursor, &state);
 
 retry:
     WT_ERR(__cursor_func_init(cbt, true));
-
+    // TODO: (yangzaorang) reading here
     if (btree->type == BTREE_ROW) {
         WT_ERR(__cursor_row_search(cbt, true, NULL, NULL));
         /*

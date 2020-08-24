@@ -43,6 +43,7 @@ typedef enum {
 #define WT_CAP_LOG 30
 #define WT_CAP_READ 55
 
+// 限流,参见: http://source.wiredtiger.com/3.2.1/tune_capacity.html
 struct __wt_capacity {
     uint64_t ckpt;      /* Bytes/sec checkpoint capacity */
     uint64_t evict;     /* Bytes/sec eviction capacity */

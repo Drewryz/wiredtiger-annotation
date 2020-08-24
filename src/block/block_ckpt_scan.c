@@ -80,7 +80,7 @@ __wt_block_checkpoint_final(
      * this approach is simpler.
      */
     size = buf->size + WT_INTPACK64_MAXSIZE;
-    WT_RET(__wt_buf_extend(session, buf, size));
+    WT_RET(__wt_buf_extend(session, buf, size)); // 这一步之后buf->size没有变
     p = (uint8_t *)buf->mem + buf->size;
     WT_RET(__wt_vpack_uint(&p, 0, ++S2BT(session)->write_gen));
     buf->size = WT_PTRDIFF(p, buf->mem);

@@ -1280,6 +1280,7 @@ struct __wt_insert_head {
 #define WT_ENTER_PAGE_INDEX(session)                                         \
     do {                                                                     \
         uint64_t __prev_split_gen = __wt_session_gen(session, WT_GEN_SPLIT); \
+        MY_PRINTF("yzr!!! %d\n", __prev_split_gen);                             \
         if (__prev_split_gen == 0)                                           \
             __wt_session_gen_enter(session, WT_GEN_SPLIT);
 
@@ -1289,6 +1290,8 @@ struct __wt_insert_head {
     }                                                  \
     while (0)
 
+// WT_WITH_PAGE_INDEX(
+//       session, ret = __wt_row_search(cbt, &cbt->iface.key, insert, leaf, false, leaf_foundp));
 #define WT_WITH_PAGE_INDEX(session, e) \
     WT_ENTER_PAGE_INDEX(session);      \
     (e);                               \

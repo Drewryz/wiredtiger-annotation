@@ -35,7 +35,7 @@ err:
     __wt_free(session, modify);
     return (ret);
 }
-
+// cbt, &cbt->iface.key, &cbt->iface.value, NULL, 4, false
 /*
  * __wt_row_modify --
  *     Row-store insert, update and delete.

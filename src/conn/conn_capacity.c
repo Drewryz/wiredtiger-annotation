@@ -264,6 +264,10 @@ __capacity_reserve(
     *result = res_value;
 }
 
+// 为子系统保留一个执行写操作的时间，并等待到那个时间。
+// 其概念是，对子系统的每次写操作都会保留一个时间槽来执行写操作，并自动调整预留标记，使其指向预留槽的后面。
+// 调整的大小(即槽所表示的时间长度，以纳秒为单位)与要写入的字节数成比例，这个比例的计算很简单，因此我们可以在一秒内精确地满足配置的容量。
+// 从纪元开始，预订时间都是以纳秒为单位的。
 /*
  * __wt_capacity_throttle --
  *     Reserve a time to perform a write operation for the subsystem, and wait until that time. The
@@ -287,6 +291,7 @@ __wt_capacity_throttle(WT_SESSION_IMPL *session, uint64_t bytes, WT_THROTTLE_TYP
 
     conn = S2C(session);
     cap = &conn->capacity;
+    MY_PRINTF("8989 %lld\n",cap->total);
     /* NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) */
     capacity = steal_capacity = 0;
     reservation = steal = NULL;

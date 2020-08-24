@@ -30,7 +30,7 @@ int main() {
     const char *key, *value;
     int ret;
     /* Open a connection to the database, creating it if necessary. */
-    wiredtiger_open("./wt_meta", NULL, "create", &conn);
+    wiredtiger_open("./wt_meta", NULL, "create,io_capacity=(total=40MB)", &conn);
     /* Open a session handle for the database. */
     conn->open_session(conn, NULL, NULL, &session);
     /* Create table. */

@@ -209,7 +209,7 @@ __wt_block_checkpoint_start(WT_SESSION_IMPL *session, WT_BLOCK *block)
     __wt_spin_unlock(session, &block->live_lock);
     return (ret);
 }
-
+// TODO: reading here 2020-8-21-20:28 
 /*
  * __wt_block_checkpoint --
  *     Create a new checkpoint.
