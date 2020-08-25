@@ -270,6 +270,7 @@ __block_manager_session_cleanup(WT_SESSION_IMPL *session)
     return (ret);
 }
 
+// TODO: 这个函数就是在session这里分配几个ext结构体，没看懂啥用途
 /*
  * __wt_block_ext_prealloc --
  *     Pre-allocate WT_EXT and WT_SIZE structures.

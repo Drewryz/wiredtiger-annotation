@@ -52,6 +52,10 @@ __bm_block_header(WT_BM *bm)
     return (__wt_block_header(bm->block));
 }
 
+// 这个函数做了两件事：1. 写数据 2. checkpoint
+// eg:
+//  WT_ERR(checkpoint ? bm->checkpoint(bm, session, ip, btree->ckpt, data_checksum) :
+//                         bm->write(bm, session, ip, addr, addr_sizep, data_checksum, checkpoint_io));
 /*
  * __bm_checkpoint --
  *     Write a buffer into a block, creating a checkpoint.
@@ -569,7 +573,7 @@ __bm_method_set(WT_BM *bm, bool readonly)
     bm->is_mapped = __bm_is_mapped;
     bm->map_discard = __bm_map_discard;
     bm->preload = __wt_bm_preload;
-    bm->read = __wt_bm_read;
+    bm->read = __wt_bm_read; // 已读完
     bm->salvage_end = __bm_salvage_end;
     bm->salvage_next = __bm_salvage_next;
     bm->salvage_start = __bm_salvage_start;

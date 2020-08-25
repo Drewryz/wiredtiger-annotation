@@ -278,6 +278,7 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
         local_locked = true;
     }
     // 找到可写入的位置
+    // 从寻找方式看起来，一个page在磁盘上占用的空间是连续的(不考虑最底层的文件系统)
     ret = __wt_block_alloc(session, block, &offset, (wt_off_t)align_size);
     if (ret == 0)
         ret = __wt_block_extend(session, block, fh, offset, align_size, &local_locked); // TODO: 这个函数没有太明白

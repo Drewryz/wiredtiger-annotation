@@ -249,7 +249,7 @@ __wt_block_checkpoint(
     WT_ERR(__wt_block_ext_prealloc(session, 250));
 
     /* Process the checkpoint list, deleting and updating as required. */
-    ret = __ckpt_process(session, block, ckptbase);
+    ret = __ckpt_process(session, block, ckptbase);  // TODO: reading here 2020-8-25-11:45
 
     /* Discard any excessive memory we've allocated. */
     WT_TRET(__wt_block_ext_discard(session, 250));
