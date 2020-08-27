@@ -236,7 +236,7 @@ struct __wt_block {
 
     /* Configuration information, set when the file is opened. */
     uint32_t allocfirst; /* Allocation is first-fit */ // block分配方式, 参见：https://source.wiredtiger.com/3.2.1/tune_file_alloc.html
-    uint32_t allocsize;  /* Allocation size */ // 每次分片空间时的单位
+    uint32_t allocsize;  /* Allocation size */ // 每次分配空间时的单位
     size_t os_cache;     /* System buffer cache flush max */
     size_t os_cache_max;
     size_t os_cache_dirty_max;
@@ -250,7 +250,7 @@ struct __wt_block {
      * one WT_BM handle.
      */
     WT_SPINLOCK live_lock; /* Live checkpoint lock */
-    WT_BLOCK_CKPT live;    /* Live checkpoint */
+    WT_BLOCK_CKPT live;    /* Live checkpoint */ // live算是整个数据文档当前的镜像，记录了当前文件哪些block可用，已分片，被丢弃
 #ifdef HAVE_DIAGNOSTIC
     bool live_open; /* Live system is open */
 #endif

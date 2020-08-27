@@ -31,6 +31,7 @@ __wt_block_compact_start(WT_SESSION_IMPL *session, WT_BLOCK *block)
     return (0);
 }
 
+// compact结束。输出一些日志
 /*
  * __wt_block_compact_end --
  *     End compaction of a file.
@@ -50,6 +51,11 @@ __wt_block_compact_end(WT_SESSION_IMPL *session, WT_BLOCK *block)
     return (0);
 }
 
+// 这个函数用于判断是否真的有必要做compact，没有必要skipp=true, 有必要skipp=false
+// 参见：https://mongoing.com/archives/26907
+// 整体的判断策略为：
+// 前面80%的空间里，是否有20%的空闲空间，用于写入文件后面20%的数据，或者
+// 前面90%的空间里，是否有10%的空闲空间，用于写入文件后面10%的数据
 /*
  * __wt_block_compact_skip --
  *     Return if compaction will shrink the file.
@@ -127,6 +133,7 @@ __wt_block_compact_skip(WT_SESSION_IMPL *session, WT_BLOCK *block, bool *skipp)
     return (0);
 }
 
+// TODO: 没搞懂这个函数要干嘛:)
 /*
  * __wt_block_compact_page_skip --
  *     Return if writing a particular page will shrink the file.

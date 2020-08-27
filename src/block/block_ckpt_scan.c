@@ -265,6 +265,7 @@ __wt_block_checkpoint_last(WT_SESSION_IMPL *session, WT_BLOCK *block, char **met
     /*
      * Scan the file for pages, using the minimum possible WiredTiger allocation size.
      */
+    MY_PRINTF("[%s]!!!!\n", block->name);
     fh = block->fh;
     for (nblocks = 0, offset = 0; offset < block->size; offset += size) {
 /* Report progress occasionally. */

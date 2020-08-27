@@ -144,6 +144,7 @@ err:
     return (ret);
 }
 
+// block崩溃，写一些日志
 /*
  * __wt_bm_corrupt --
  *     Report a block has been corrupted, external API.

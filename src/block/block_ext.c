@@ -308,6 +308,7 @@ __wt_block_misplaced(WT_SESSION_IMPL *session, WT_BLOCK *block, const char *list
 }
 #endif
 
+// 删除offset为off的ext，并将该ext返回
 /*
  * __block_off_remove --
  *     Remove a record from an extent list.
@@ -378,6 +379,18 @@ corrupt:
     WT_BLOCK_RET(
       session, block, EINVAL, "attempt to remove non-existent offset from an extent list");
 }
+
+// 删除一个range，剩余的block分为两个插入el中，eg
+// --------------------------------------------
+//|     a      |    cur      |        b        |
+// --------------------------------------------
+// cur要么在before中，要么在after中，不可能出现下面的情况：
+// ----------------------             ----------------------
+//|         before       |           |       after          |
+// ----------------------             ----------------------
+//                  ----------------------
+//                 |         cur          | 
+//                  ----------------------
 
 /*
  * __wt_block_off_remove_overlap --
@@ -965,6 +978,38 @@ __wt_block_insert_ext(
     return (__block_merge(session, block, el, off, size));
 }
 
+// 如果可能的话，将 [off, off+size]的extentmerge到其之前或者之后的extent中，merge以后的新extent被插入跳表中。
+// eg: 假设b是偏移为off,大小为size的extent
+// --------- ----------      ----------
+//|    a    |     b    |    |     c    |
+// --------- ----------      ----------
+// 此时可以将a和b做merge
+// 
+// ---------      ---------- ----------
+//|    a    |    |     b    |     c    |
+// ---------      ---------- ----------
+// 此时可以将b和c做merge
+//
+// --------- ---------- ----------
+//|    a    |     b    |     c    |
+// --------- ---------- ----------
+// 此时可以将a,b,c一起merge
+
+// ---------      ----------      ----------
+//|    a    |    |     b    |    |    c     |
+// ---------      ----------      ----------
+// 此时不做merge，而是将b直接插入跳表中
+
+// ---------  
+//|    a    | 
+// --------- 
+//        ---------  
+//       |    a    | 
+//        --------- 
+//               --------- 
+//              |    c    |
+//               ---------
+// 如果存在overlap，返回错误
 /*
  * __block_merge --
  *     Insert an extent into an extent list, merging if possible (internal version).
@@ -1080,6 +1125,7 @@ err:
     return (ret);
 }
 
+// 从实际的block中读取数据，到el中
 /*
  * __wt_block_extlist_read --
  *     Read an extent list.
@@ -1098,6 +1144,7 @@ __wt_block_extlist_read(
     if (el->offset == WT_BLOCK_INVALID_OFFSET)
         return (0);
 
+    // 每个session有WT_ITEM缓冲区，从session中获取一个WT_ITEM
     WT_RET(__wt_scr_alloc(session, el->size, &tmp));
     WT_ERR(__wt_block_read_off(session, block, tmp, el->offset, el->size, el->checksum));
 

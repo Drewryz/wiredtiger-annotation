@@ -554,22 +554,22 @@ __bm_write_size_readonly(WT_BM *bm, WT_SESSION_IMPL *session, size_t *sizep)
 static void
 __bm_method_set(WT_BM *bm, bool readonly)
 {
-    bm->addr_invalid = __bm_addr_invalid;
-    bm->addr_string = __bm_addr_string;
-    bm->block_header = __bm_block_header;
-    bm->checkpoint = __bm_checkpoint;  // TODO: reading here. 2020-8-20-22:27
-    bm->checkpoint_last = __bm_checkpoint_last;
+    bm->addr_invalid = __bm_addr_invalid; // ar (ar means aleady read)
+    bm->addr_string = __bm_addr_string; // ar
+    bm->block_header = __bm_block_header; // ar
+    bm->checkpoint = __bm_checkpoint;  // TODO: 大概扫了下这个函数应该是上层做checkpoint时block层的实现。涉及的东西有点多，建议还是后面再看吧... 
+    bm->checkpoint_last = __bm_checkpoint_last;  // TODO: reading here 2020-8-26-21:29
     bm->checkpoint_load = __bm_checkpoint_load;
     bm->checkpoint_resolve = __bm_checkpoint_resolve;
     bm->checkpoint_start = __bm_checkpoint_start;
     bm->checkpoint_unload = __bm_checkpoint_unload;
-    bm->close = __bm_close;
-    bm->compact_end = __bm_compact_end;
-    bm->compact_page_skip = __bm_compact_page_skip;
-    bm->compact_skip = __bm_compact_skip;
-    bm->compact_start = __bm_compact_start;
-    bm->corrupt = __wt_bm_corrupt;
-    bm->free = __bm_free;
+    bm->close = __bm_close; // ar
+    bm->compact_end = __bm_compact_end; // ar
+    bm->compact_page_skip = __bm_compact_page_skip; // du (du means dont understand)
+    bm->compact_skip = __bm_compact_skip; // ar
+    bm->compact_start = __bm_compact_start; // 初始化一些状态数据 (ar)
+    bm->corrupt = __wt_bm_corrupt; // ar 
+    bm->free = __bm_free; // ar TODO:该操作都是在extent上搞事情，为什么没有page或者block呢？, 接下来需要再看下write函数 reading here 2020-8-27-21:46
     bm->is_mapped = __bm_is_mapped;
     bm->map_discard = __bm_map_discard;
     bm->preload = __wt_bm_preload;
