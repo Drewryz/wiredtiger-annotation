@@ -492,7 +492,7 @@ __block_extend(WT_SESSION_IMPL *session, WT_BLOCK *block, wt_off_t *offp, wt_off
     return (0);
 }
 
-// offp写入数据的起始位置
+// offp写入数据的起始位置， 输出参数
 /*
  * __wt_block_alloc --
  *     Alloc a chunk of space from the underlying file.
@@ -912,6 +912,7 @@ __wt_block_extlist_merge(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_EXTLIST *
     return (0);
 }
 
+// off和size是新entry的off和size，属于传入参数
 /*
  * __block_append --
  *     Append a new entry to the allocation list.

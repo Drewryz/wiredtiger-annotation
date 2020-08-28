@@ -138,8 +138,11 @@ struct __wt_size {
  */
 #define WT_BLOCK_CHECKPOINT_BUFFER (1 + 14 * WT_INTPACK64_MAXSIZE)
 // (yangzaorang) 参见: https://mongoing.com/archives/73180
-// TODO: (yangzaorang) reading here.
-// TODO: 读wt github wiki
+// 该数据结构三个链表的元素是extent，wt数据在磁盘上的排列应该像下面这样：
+//  ----------------------------------------------------------------
+// |   page1   |    page2    |   page3   |    page4  |     page...  |
+//  ----------------------------------------------------------------
+//                             extent
 struct __wt_block_ckpt {
     uint8_t version; /* Version */
 

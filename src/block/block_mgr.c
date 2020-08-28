@@ -525,6 +525,8 @@ __bm_write_readonly(WT_BM *bm, WT_SESSION_IMPL *session, WT_ITEM *buf, uint8_t *
     return (__bm_readonly(bm, session));
 }
 
+// 如果要实际写入块中，块中的size可能比sizep本身所指的size大，因为有block header，字节对齐等，因此，
+// 这个函数用来返回实际写入磁盘所占用的空间
 /*
  * __bm_write_size --
  *     Return the buffer size required to write a block.
@@ -569,23 +571,23 @@ __bm_method_set(WT_BM *bm, bool readonly)
     bm->compact_skip = __bm_compact_skip; // ar
     bm->compact_start = __bm_compact_start; // 初始化一些状态数据 (ar)
     bm->corrupt = __wt_bm_corrupt; // ar 
-    bm->free = __bm_free; // ar TODO:该操作都是在extent上搞事情，为什么没有page或者block呢？, 接下来需要再看下write函数 reading here 2020-8-27-21:46
-    bm->is_mapped = __bm_is_mapped;
-    bm->map_discard = __bm_map_discard;
-    bm->preload = __wt_bm_preload;
+    bm->free = __bm_free; // ar reading here 2020-8-27-21:46
+    bm->is_mapped = __bm_is_mapped; // du TODO: 可能和mmap相关，http://source.wiredtiger.com/3.2.1/group__wt.html#ga9e6adae3fc6964ef837a62795c7840ed
+    bm->map_discard = __bm_map_discard; // TODO: 关于map的事情后面再看
+    bm->preload = __wt_bm_preload; // ar, 不太重要，pass
     bm->read = __wt_bm_read; // 已读完
-    bm->salvage_end = __bm_salvage_end;
+    bm->salvage_end = __bm_salvage_end; // TODO: salvage逻辑以后再看，不是核心业务逻辑
     bm->salvage_next = __bm_salvage_next;
     bm->salvage_start = __bm_salvage_start;
     bm->salvage_valid = __bm_salvage_valid;
-    bm->size = __wt_block_manager_size;
-    bm->stat = __bm_stat;
-    bm->sync = __bm_sync;
-    bm->verify_addr = __bm_verify_addr;
+    bm->size = __wt_block_manager_size; // ar
+    bm->stat = __bm_stat; // ar
+    bm->sync = __bm_sync; // ar
+    bm->verify_addr = __bm_verify_addr; // TODO: 下面再读
     bm->verify_end = __bm_verify_end;
     bm->verify_start = __bm_verify_start;
     bm->write = __bm_write;  // 已读完
-    bm->write_size = __bm_write_size;
+    bm->write_size = __bm_write_size; // ar
 
     if (readonly) {
         bm->checkpoint = __bm_checkpoint_readonly;
