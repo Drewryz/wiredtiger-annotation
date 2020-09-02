@@ -35,6 +35,10 @@
 #define WT_REC_VISIBILITY_ERR 0x40u
 #define WT_REC_VISIBLE_ALL 0x80u
 /* AUTOMATIC FLAG VALUE GENERATION STOP */
+// 一个页面的结构
+//  ------------------------ -----------------------
+// |    WT_PAGE_HEADER      |    WT_BLOCK_HEADER    |
+//  ------------------------ -----------------------
 
 /*
  * WT_PAGE_HEADER --
@@ -121,6 +125,7 @@ __wt_page_header_byteswap(WT_PAGE_HEADER *dsk)
 #define WT_PAGE_HEADER_BYTE(btree, dsk) \
     ((void *)((uint8_t *)(dsk) + WT_PAGE_HEADER_BYTE_SIZE(btree)))
 
+//  page有内存地址，也有在磁盘上的地址
 /*
  * WT_ADDR --
  *	An in-memory structure to hold a block's location.
@@ -353,7 +358,7 @@ struct __wt_page_modify {
                     WT_INSERT *ins; /* Insert list reference */
                     WT_ROW *ripcip; /* Original on-page reference */
                     WT_UPDATE *onpage_upd;
-                } * supd;
+                } * supd;  // TODO: reading here 2020-8-30-12:07
                 uint32_t supd_entries;
 
                 /*
@@ -715,7 +720,7 @@ struct __wt_page {
 
     uint64_t cache_create_gen; /* Page create timestamp */
     uint64_t evict_pass_gen;   /* Eviction pass generation */
-};
+}; // end __wt_page
 
 /*
  * WT_PAGE_DISK_OFFSET, WT_PAGE_REF_OFFSET --
@@ -850,19 +855,20 @@ struct __wt_page_deleted {
     WT_UPDATE **update_list; /* List of updates for abort */
 };
 
+// WT_REF是对WT_PAGE的封装
 /*
  * WT_REF --
  *	A single in-memory page and the state information used to determine if
  * it's OK to dereference the pointer to the page.
  */
 struct __wt_ref {
-    WT_PAGE *page; /* Page */
+    WT_PAGE *page; /* Page */  // 就是当前的page
 
     /*
      * When the tree deepens as a result of a split, the home page value changes. Don't cache it, we
      * need to see that change when looking up our slot in the page's index structure.
      */
-    WT_PAGE *volatile home;        /* Reference page */
+    WT_PAGE *volatile home;        /* Reference page */  // home指的是parent节点
     volatile uint32_t pindex_hint; /* Reference page index hint */
 
 #define WT_REF_DISK 0        /* Page is on disk */
@@ -879,7 +885,7 @@ struct __wt_ref {
      * Address: on-page cell if read from backing block, off-page WT_ADDR if instantiated in-memory,
      * or NULL if page created in-memory.
      */
-    void *addr;
+    void *addr; // TODO: WTF, 不懂
 
     /*
      * The child page's key.  Do NOT change this union without reviewing

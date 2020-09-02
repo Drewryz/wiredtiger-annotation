@@ -162,6 +162,7 @@ __wt_page_inmem(WT_SESSION_IMPL *session, WT_REF *ref, const void *image, uint32
          * Row-store internal page entries map one-to-two to the number of physical entries on the
          * page (each entry is a key and location cookie pair).
          */
+        // // 一个entry表示key和value，而在磁盘上key和value是不做区分的，都是entry，因此这里的比例是1：2
         alloc_entries = dsk->u.entries / 2;
         break;
     case WT_PAGE_ROW_LEAF:

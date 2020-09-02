@@ -6,6 +6,7 @@
  * See the file LICENSE for redistribution information.
  */
 
+// 检查值的有效性窗口是否健全。
 /*
  * __cell_check_value_validity --
  *     Check the value's validity window for sanity.
@@ -296,11 +297,11 @@ __wt_cell_pack_addr(WT_SESSION_IMPL *session, WT_CELL *cell, u_int cell_type, ui
 
     __cell_pack_addr_validity(session, &p, start_durable_ts, oldest_start_ts, oldest_start_txn,
       stop_durable_ts, newest_stop_ts, newest_stop_txn);
-
+    // record number
     if (recno == WT_RECNO_OOB)
         cell->__chunk[0] |= (uint8_t)cell_type; /* Type */
     else {
-        cell->__chunk[0] |= (uint8_t)(cell_type | WT_CELL_64V);
+        cell->__chunk[0] |= (uint8_t)(cell_type | WT_CELL_64V); // 设置了8B packed域，Bit 3 marks an 8B packed, uint64_t value following the cell description byte.
         /* Record number */
         WT_IGNORE_RET(__wt_vpack_uint(&p, 0, recno));
     }
@@ -309,10 +310,12 @@ __wt_cell_pack_addr(WT_SESSION_IMPL *session, WT_CELL *cell, u_int cell_type, ui
     return (WT_PTRDIFF(p, cell));
 }
 
+// reading here 2020-9-1-22:25
 /*
  * __wt_cell_pack_value --
  *     Set a value item's WT_CELL contents.
  */
+// TODO: 这个函数的rle参数我没有看懂啥意思，只知道和游程编码相关
 static inline size_t
 __wt_cell_pack_value(WT_SESSION_IMPL *session, WT_CELL *cell, wt_timestamp_t durable_start_ts,
   wt_timestamp_t start_ts, uint64_t start_txn, wt_timestamp_t durable_stop_ts,
@@ -339,7 +342,7 @@ __wt_cell_pack_value(WT_SESSION_IMPL *session, WT_CELL *cell, wt_timestamp_t dur
     if (!validity && rle < 2 && size <= WT_CELL_SHORT_MAX) {
         byte = (uint8_t)size; /* Type + length */
         cell->__chunk[0] = (uint8_t)((byte << WT_CELL_SHORT_SHIFT) | WT_CELL_VALUE_SHORT);
-    } else {
+    } else { // 有附加描述符
         /*
          * If the size was what prevented us from using a short cell, it's larger than the
          * adjustment size. Decrement/increment it when packing/unpacking so it takes up less room.
@@ -363,6 +366,13 @@ __wt_cell_pack_value(WT_SESSION_IMPL *session, WT_CELL *cell, wt_timestamp_t dur
  *     Return if two value items would have identical WT_CELLs (except for their validity window and
  *     any RLE).
  */
+// 比较pace_cell和val_cell是否相同，但是不比较validity window and RLE
+// 整体来说，一个cell的布局应该是这样的：
+//  ---------------------------------------------------------------
+// |    descriptor     |     杂项      |     size      |    data... | 
+//  ---------------------------------------------------------------
+// 杂项随着descriptor的不同而不同，长度也不一致。
+// 这个函数是拿到两个cell的size，然后根据size比较后面的data
 static inline int
 __wt_cell_pack_value_match(
   WT_CELL *page_cell, WT_CELL *val_cell, const uint8_t *val_data, bool *matchp)

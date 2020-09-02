@@ -449,7 +449,7 @@ __page_read(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags)
     default:
         return (0);
     }
-    if (!WT_REF_CAS_STATE(session, ref, previous_state, new_state))
+    if (!WT_REF_CAS_STATE(session, ref, previous_state, new_state)) // 设置ref为新的state
         return (0);
 
     final_state = WT_REF_MEM;
@@ -462,7 +462,7 @@ __page_read(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags)
      * Get the address: if there is no address, the page was deleted or had only lookaside entries,
      * and a subsequent search or insert is forcing re-creation of the name space.
      */
-    __wt_ref_info(session, ref, &addr, &addr_size, NULL);
+    __wt_ref_info(session, ref, &addr, &addr_size, NULL); // reading here. 2020-8-31-11:47
     if (addr == NULL) {
         WT_ASSERT(session, previous_state != WT_REF_DISK);
 

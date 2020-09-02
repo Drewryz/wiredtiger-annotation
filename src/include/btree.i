@@ -627,6 +627,7 @@ __wt_off_page(WT_PAGE *page, const void *p)
     /*
      * There may be no underlying page, in which case the reference is off-page by definition.
      */
+    // TODO: 为什么这四种情况表示指向业务数据？实在是想不明白
     return (page->dsk == NULL || p < (void *)page->dsk ||
       p >= (void *)((uint8_t *)page->dsk + page->dsk->mem_size));
 }
@@ -1047,6 +1048,7 @@ __wt_row_leaf_value(WT_PAGE *page, WT_ROW *rip, WT_ITEM *value)
     return (false);
 }
 
+// 对于一个ref指向的WT_REF，返回它的addr, size, type
 /*
  * __wt_ref_info --
  *     Return the addr/size and type triplet for a reference.
@@ -1059,10 +1061,11 @@ __wt_ref_info(
     WT_CELL_UNPACK *unpack, _unpack;
     WT_PAGE *page;
 
-    addr = ref->addr;
+    addr = ref->addr; // 这tmd都是什么jb玩意
     unpack = &_unpack;
     page = ref->home;
 
+    // 如果为空，则没有位置。如果离页，指针引用一个WT_ADDR结构。如果在页面上，指针引用一个cell。
     /*
      * If NULL, there is no location. If off-page, the pointer references a WT_ADDR structure. If
      * on-page, the pointer references a cell.

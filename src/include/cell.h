@@ -9,27 +9,32 @@
 /*
  * WT_CELL --
  *	Variable-length cell type.
- *
+ * 对于page来说，header之后就是cells
  * Pages containing variable-length keys or values data (the WT_PAGE_ROW_INT,
  * WT_PAGE_ROW_LEAF, WT_PAGE_COL_INT and WT_PAGE_COL_VAR page types), have
  * cells after the page header.
  *
+ * 有4种基本单元格类型:键和数据(每个都有溢出形式)、已删除单元格和页外引用。
+ * 单元格后面通常跟着附加数据，这些数据类型不同。
+ * 键后面跟着一块数据，值后面跟着一个可选的有效性窗口和一块数据，溢出和页面外单元格后面跟着一个可选的有效性窗口和一个地址cookies
  * There are 4 basic cell types: keys and data (each of which has an overflow
  * form), deleted cells and off-page references.  The cell is usually followed
  * by additional data, varying by type: keys are followed by a chunk of data,
  * values are followed by an optional validity window and a chunk of data,
  * overflow and off-page cells are followed by an optional validity window and
- * an address cookie.
- *
+ * an address cookies
  * Deleted cells are place-holders for column-store files, where entries cannot
  * be removed in order to preserve the record count.
  *
+ * 
+ * 
+ * 
  * Here's the cell use by page type:
- *
+ * 行存储-内部页使用到的cell类型：
  * WT_PAGE_ROW_INT (row-store internal page):
  *	Keys and offpage-reference pairs (a WT_CELL_KEY or WT_CELL_KEY_OVFL
  * cell followed by a WT_CELL_ADDR_XXX cell).
- *
+ * 行存储-叶子页使用到的cell类型：
  * WT_PAGE_ROW_LEAF (row-store leaf page):
  *	Keys with optional data cells (a WT_CELL_KEY or WT_CELL_KEY_OVFL cell,
  *	normally followed by a WT_CELL_{VALUE,VALUE_COPY,VALUE_OVFL} cell).
@@ -44,27 +49,32 @@
  *	Data cells (a WT_CELL_{VALUE,VALUE_COPY,VALUE_OVFL} cell), or deleted
  * cells (a WT_CELL_DEL cell).
  *
+ * 
+ * 
+ * 
+ * 
  * Each cell starts with a descriptor byte:
- *
  * Bits 1 and 2 are reserved for "short" key and value cells (that is, a cell
  * carrying data less than 64B, where we can store the data length in the cell
  * descriptor byte):
- *	0x00	Not a short key/data cell
+ *	0x00	Not a short key/data cell TODO: 0x开头为16进制，但是这里明显和下面的宏定义不一致。。。
  *	0x01	Short key cell
  *	0x10	Short key cell, with a following prefix-compression byte
  *	0x11	Short value cell
  * In the "short" variants, the other 6 bits of the descriptor byte are the
  * data length.
- *
+ * 
+ * 第3位在单元格描述字节后面标记一个8B打包的uint64_t值。
  * Bit 3 marks an 8B packed, uint64_t value following the cell description byte.
  * (A run-length counter or a record number for variable-length column store.)
  *
+ * 此附加字节中的底部位表示该单元是已准备但尚未提交的事务的一部分。接下来的6位描述了时间戳/事务id的有效性和持久性窗口。
  * Bit 4 marks a value with an additional descriptor byte. If this flag is set,
  * the next byte after the initial cell byte is an additional description byte.
  * The bottom bit in this additional byte indicates that the cell is part of a
  * prepared, and not yet committed transaction. The next 6 bits describe a validity
  * and durability window of timestamp/transaction IDs.  The top bit is currently unused.
- *
+ * TODO: 接下来看cell类型 reading here 2020-8-31-22:51
  * Bits 5-8 are cell "types".
  */
 #define WT_CELL_KEY_SHORT 0x01     /* Short key */
@@ -97,6 +107,7 @@
  * if the two values are the same, we only store them once and have any second and subsequent uses
  * reference the original.
  */
+// 下面这些宏应该是cell类型
 #define WT_CELL_ADDR_DEL (0)            /* Address: deleted */
 #define WT_CELL_ADDR_INT (1 << 4)       /* Address: internal  */
 #define WT_CELL_ADDR_LEAF (2 << 4)      /* Address: leaf */
