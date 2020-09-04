@@ -35,7 +35,7 @@
 #define WT_REC_VISIBILITY_ERR 0x40u
 #define WT_REC_VISIBLE_ALL 0x80u
 /* AUTOMATIC FLAG VALUE GENERATION STOP */
-// 一个页面的结构
+// 一个页面的结构(存储在磁盘上)
 //  ------------------------ -----------------------
 // |    WT_PAGE_HEADER      |    WT_BLOCK_HEADER    |
 //  ------------------------ -----------------------
@@ -66,7 +66,7 @@ struct __wt_page_header {
 
     union {
         uint32_t entries; /* 20-23: number of cells on page */
-        uint32_t datalen; /* 20-23: overflow data length */
+        uint32_t datalen; /* 20-23: overflow data length */ // 对于溢出页这里记录的是溢出数据的长度
     } u;
 
     uint8_t type; /* 24: page type */

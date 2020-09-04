@@ -5,7 +5,7 @@
  *
  * See the file LICENSE for redistribution information.
  */
-
+// pass
 #include "wt_internal.h"
 
 static int __err_cell_corrupt(WT_SESSION_IMPL *, int, uint32_t, const char *);

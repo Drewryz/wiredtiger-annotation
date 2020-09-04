@@ -15,6 +15,8 @@ static int __inmem_row_int(WT_SESSION_IMPL *, WT_PAGE *, size_t *);
 static int __inmem_row_leaf(WT_SESSION_IMPL *, WT_PAGE *, size_t *, bool);
 static int __inmem_row_leaf_entries(WT_SESSION_IMPL *, const WT_PAGE_HEADER *, uint32_t *);
 
+
+// reading here. 2020-9-4-17:21
 /*
  * __wt_page_alloc --
  *     Create or read a page into the cache.

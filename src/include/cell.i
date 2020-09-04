@@ -310,12 +310,12 @@ __wt_cell_pack_addr(WT_SESSION_IMPL *session, WT_CELL *cell, u_int cell_type, ui
     return (WT_PTRDIFF(p, cell));
 }
 
-// reading here 2020-9-1-22:25
+// 所谓设置WT_CELL，只是设置descriptor、杂项、size项，并没有设置值
 /*
  * __wt_cell_pack_value --
  *     Set a value item's WT_CELL contents.
  */
-// TODO: 这个函数的rle参数我没有看懂啥意思，只知道和游程编码相关
+// TODO: 这个函数的rle参数应该是游程编码的长度
 static inline size_t
 __wt_cell_pack_value(WT_SESSION_IMPL *session, WT_CELL *cell, wt_timestamp_t durable_start_ts,
   wt_timestamp_t start_ts, uint64_t start_txn, wt_timestamp_t durable_stop_ts,
@@ -460,6 +460,7 @@ __wt_cell_pack_value_match(
  * __wt_cell_pack_copy --
  *     Write a copy value cell.
  */
+// TODO: reading here 2020-9-2-14:20
 static inline size_t
 __wt_cell_pack_copy(WT_SESSION_IMPL *session, WT_CELL *cell, wt_timestamp_t start_durable_ts,
   wt_timestamp_t start_ts, uint64_t start_txn, wt_timestamp_t stop_durable_ts,
@@ -551,6 +552,7 @@ __wt_cell_pack_int_key(WT_CELL *cell, size_t size)
     WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)size));
     return (WT_PTRDIFF(p, cell));
 }
+
 
 /*
  * __wt_cell_pack_leaf_key --
@@ -724,6 +726,7 @@ __wt_cell_type_reset(WT_SESSION_IMPL *session, WT_CELL *cell, u_int old_type, u_
     cell->__chunk[0] = (cell->__chunk[0] & ~WT_CELL_TYPE_MASK) | WT_CELL_TYPE(new_type);
 }
 
+// TODO: reading here. 2020-9-3-11:51
 /*
  * __wt_cell_leaf_value_parse --
  *     Return the cell if it's a row-store leaf page value, otherwise return NULL.
@@ -1197,8 +1200,9 @@ __cell_data_ref(
 {
     WT_BTREE *btree;
     bool decoded;
+    // 关于wt中的huffman，参考：https://source.wiredtiger.com/develop/huffman.html
     void *huffman;
-
+    
     btree = S2BT(session);
 
     /* Reference the cell's data, optionally decode it. */
@@ -1237,6 +1241,13 @@ __cell_data_ref(
                                                         store->data, store->size, store));
 }
 
+
+// 以下这两个函数都是从cell_unpack中读取数据到store, 注释解释了这个函数为什么需要两个版本。
+// 当一个溢出item被删除时，其底层的数据也就被删除了。
+// 但可能有并行的事务还需要访问该溢出页。
+// wt对删掉的溢出页做了缓冲，并将引用溢出页的cell类型改为WT_CELL_VALUE_OVFL_RM
+// 在读取数据时，如果cell的类型为WT_CELL_VALUE_OVFL_RM，则直接从缓冲读。
+// 缓冲的引用在：WT_PAGE *page->modify->ovfl_track中
 /*
  * __wt_dsk_cell_data_ref --
  *     Set a buffer to reference the data from an unpacked cell. There are two versions because of

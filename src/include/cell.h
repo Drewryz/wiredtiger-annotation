@@ -133,6 +133,8 @@
  */
 #define WT_CELL_SIZE_ADJUST (WT_CELL_SHORT_MAX + 1)
 
+
+// 这个结构体给出了cell结构的最大size（不同类型的cell，有些域是没有的）。注意，cell类型不包括具体的数据
 /*
  * WT_CELL --
  *	Variable-length, on-page cell header.
@@ -141,7 +143,7 @@ struct __wt_cell {
     /*
      * Maximum of 71 bytes:
      *  1: cell descriptor byte
-     *  1: prefix compression count
+     *  1: prefix compression count TODO: 一个字节的prefix compression count是用来做什么的
      *  1: secondary descriptor byte
      * 36: 4 timestamps		(uint64_t encoding, max 9 bytes)
      * 18: 2 transaction IDs	(uint64_t encoding, max 9 bytes)

@@ -5,13 +5,15 @@
  *
  * See the file LICENSE for redistribution information.
  */
-
+// ar
 #include "wt_internal.h"
 
+// TODO: reading here. 2020-9-3-20:09
 /*
  * __ovfl_read --
  *     Read an overflow item from the disk.
  */
+// 这个函数传入的addr指向的是溢出页
 static int
 __ovfl_read(WT_SESSION_IMPL *session, const uint8_t *addr, size_t addr_size, WT_ITEM *store)
 {
@@ -57,7 +59,7 @@ __wt_ovfl_read(
      * about WT_CELL_VALUE_OVFL_RM cells.
      */
     if (page == NULL)
-        return (__ovfl_read(session, unpack->data, unpack->size, store));
+        return (__ovfl_read(session, unpack->data, unpack->size, store)); // 所以溢出cell的data存储的是数据地址
 
     /*
      * WT_CELL_VALUE_OVFL_RM cells: If reconciliation deleted an overflow value, but there was still
@@ -84,6 +86,7 @@ __wt_ovfl_read(
     return (ret);
 }
 
+// TODO: reading here 2020-9-4-11:58
 /*
  * __wt_ovfl_discard_remove --
  *     Free the on-page overflow value cache.
@@ -136,6 +139,7 @@ err:
     return (ret);
 }
 
+// TODO: 暂时跳过，和reconcile有关
 /*
  * __wt_ovfl_remove --
  *     Remove an overflow value.
@@ -195,6 +199,7 @@ __wt_ovfl_remove(WT_SESSION_IMPL *session, WT_PAGE *page, WT_CELL_UNPACK *unpack
     return (__wt_ovfl_discard_add(session, page, unpack->cell));
 }
 
+// TODO: 跳过
 /*
  * __wt_ovfl_discard --
  *     Discard an on-page overflow value, and reset the page's cell.

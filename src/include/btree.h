@@ -159,7 +159,7 @@ struct __wt_btree {
     bool lsm_primary;       /* Handle is/was the LSM primary */
 
     WT_BM *bm;          /* Block manager reference */
-    u_int block_header; /* WT_PAGE_HEADER_BYTE_SIZE */
+    u_int block_header; /* WT_PAGE_HEADER_BYTE_SIZE */ // 这个变量应该记录的是block header的长度
 
     uint64_t write_gen;   /* Write generation */
     uint64_t rec_max_txn; /* Maximum txn seen (clean trees) */
