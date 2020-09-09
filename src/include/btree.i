@@ -16,6 +16,7 @@ __wt_ref_is_root(WT_REF *ref)
     return (ref->home == NULL);
 }
 
+// TODO: 没看明白，为什么一个页面为空，要求modify不为null
 /*
  * __wt_page_is_empty --
  *     Return if the page is empty.
@@ -26,6 +27,7 @@ __wt_page_is_empty(WT_PAGE *page)
     return (page->modify != NULL && page->modify->rec_result == WT_PM_REC_EMPTY);
 }
 
+// TODO: pass
 /*
  * __wt_page_evict_clean --
  *     Return if the page can be evicted without dirtying the tree.
@@ -627,7 +629,7 @@ __wt_off_page(WT_PAGE *page, const void *p)
     /*
      * There may be no underlying page, in which case the reference is off-page by definition.
      */
-    // TODO: 为什么这四种情况表示指向业务数据？实在是想不明白
+    // 这四种情况表示指向离页数据
     return (page->dsk == NULL || p < (void *)page->dsk ||
       p >= (void *)((uint8_t *)page->dsk + page->dsk->mem_size));
 }
@@ -1061,7 +1063,7 @@ __wt_ref_info(
     WT_CELL_UNPACK *unpack, _unpack;
     WT_PAGE *page;
 
-    addr = ref->addr; // 这tmd都是什么jb玩意
+    addr = ref->addr;
     unpack = &_unpack;
     page = ref->home;
 
@@ -1077,7 +1079,7 @@ __wt_ref_info(
         *sizep = 0;
         if (typep != NULL)
             *typep = 0;
-    } else if (__wt_off_page(page, addr)) {
+    } else if (__wt_off_page(page, addr)) { // 离页表示ref->addr不在ref->home上，此时addr是WT_ADDR，表示ref->page在磁盘上的地址
         *addrp = addr->addr;
         *sizep = addr->size;
         if (typep != NULL)
@@ -1095,7 +1097,7 @@ __wt_ref_info(
                 *typep = 0;
                 break;
             }
-    } else {
+    } else { // 在页表示ref->addr在ref->home上，此时addr是WT_CELL，也可以获得ref->page的地址
         __wt_cell_unpack(session, page, (WT_CELL *)addr, unpack);
         *addrp = unpack->data;
         *sizep = unpack->size;

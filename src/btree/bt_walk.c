@@ -5,13 +5,14 @@
  *
  * See the file LICENSE for redistribution information.
  */
-
+// ar
 #include "wt_internal.h"
 
 /*
  * __ref_index_slot --
  *     Return the page's index and slot for a reference.
  */
+// 返回ref父页的index数组，以及该页在父页的索引
 static inline void
 __ref_index_slot(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp, uint32_t *slotp)
 {
@@ -46,6 +47,7 @@ __ref_index_slot(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp,
             slot = entries - 1;
         if (pindex->index[slot] == ref)
             goto found;
+        // 如果pindex_hint不准确，则遍历整个pindex->index
         for (start = &pindex->index[0], stop = &pindex->index[entries - 1],
             p = t = &pindex->index[slot];
              p > start || t < stop;) {
@@ -162,6 +164,7 @@ __ref_ascend(WT_SESSION_IMPL *session, WT_REF **refp, WT_PAGE_INDEX **pindexp, u
     *refp = parent_ref;
 }
 
+// reading here 2020-9-7-21:55
 /*
  * __split_prev_race --
  *     Check for races when descending the tree during a previous-cursor walk.
@@ -244,6 +247,7 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
      * until the page-index is updated, but I'm not willing to debug that
      * one if I'm wrong.)
      */
+    // 当前节点的子节点的父节点是否为当前节点
     if (pindex->index[pindex->entries - 1]->home != ref->page)
         return (true);
 
@@ -255,6 +259,7 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
  * __tree_walk_internal --
  *     Move to the next/previous page in the tree.
  */
+// TODO: 这个函数只是在遍历树，那它的输出是什么呢？
 static inline int
 __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp,
   int (*skip_func)(WT_SESSION_IMPL *, WT_REF *, void *, bool *), void *func_cookie, uint32_t flags)
@@ -294,7 +299,7 @@ __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp
     /*
      * There are multiple reasons and approaches to walking the in-memory
      * tree:
-     *
+     * // 哪些地方需要遍历树
      * (1) finding pages to evict (the eviction server);
      * (2) writing just dirty leaves or internal nodes (checkpoint);
      * (3) discarding pages (close);
@@ -368,6 +373,7 @@ restart:
          * If we're at the last/first slot on the internal page, return it in post-order traversal.
          * Otherwise move to the next/prev slot and left/right-most element in that subtree.
          */
+        // 如果遍历到最后一个
         while ((prev && slot == 0) || (!prev && slot == pindex->entries - 1)) {
             /* Ascend to the parent. */
             __ref_ascend(session, &ref, &pindex, &slot);
@@ -386,6 +392,7 @@ restart:
              * If we got all the way through an internal page and all of the child pages were
              * deleted, mark it for eviction.
              */
+            // 如果我们完成了一个内部页面，并且所有的子页面都被删除了，那么将其标记为驱逐。
             if (empty_internal) {
                 __wt_page_evict_soon(session, ref);
                 empty_internal = false;

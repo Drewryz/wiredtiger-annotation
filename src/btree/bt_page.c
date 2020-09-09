@@ -6,6 +6,8 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
+
 #include "wt_internal.h"
 
 static void __inmem_col_fix(WT_SESSION_IMPL *, WT_PAGE *);
@@ -21,6 +23,7 @@ static int __inmem_row_leaf_entries(WT_SESSION_IMPL *, const WT_PAGE_HEADER *, u
  * __wt_page_alloc --
  *     Create or read a page into the cache.
  */
+// 根据参数alloc一个page结构体
 int
 __wt_page_alloc(
   WT_SESSION_IMPL *session, uint8_t type, uint32_t alloc_entries, bool alloc_refs, WT_PAGE **pagep)
@@ -380,6 +383,7 @@ __inmem_col_var(WT_SESSION_IMPL *session, WT_PAGE *page, uint64_t recno, size_t 
  * __inmem_row_int --
  *     Build in-memory index for row-store internal pages.
  */
+// 遍历页上所有的cell，初始化page
 static int
 __inmem_row_int(WT_SESSION_IMPL *session, WT_PAGE *page, size_t *sizep)
 {
@@ -404,6 +408,7 @@ __inmem_row_int(WT_SESSION_IMPL *session, WT_PAGE *page, size_t *sizep)
     refp = pindex->index;
     overflow_keys = false;
     hint = 0;
+    // TODO: reading here 2020-9-7-11:47
     WT_CELL_FOREACH_BEGIN (session, btree, page->dsk, unpack) {
         ref = *refp;
         ref->home = page;
@@ -422,7 +427,7 @@ __inmem_row_int(WT_SESSION_IMPL *session, WT_PAGE *page, size_t *sizep)
              * is instantiated, and any keys that aren't instantiated cannot be overflow items.
              */
             WT_ERR(__wt_dsk_cell_data_ref(session, page->type, &unpack, current));
-
+            // TODO: 这个函数具体在做什么，没有看懂
             WT_ERR(__wt_row_ikey_incr(session, page, WT_PAGE_DISK_OFFSET(page, unpack.cell),
               current->data, current->size, ref));
 

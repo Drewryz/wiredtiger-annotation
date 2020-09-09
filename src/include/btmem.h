@@ -855,7 +855,7 @@ struct __wt_page_deleted {
     WT_UPDATE **update_list; /* List of updates for abort */
 };
 
-// WT_REF是对WT_PAGE的封装
+// WT_REF用于两层page之间的过度
 /*
  * WT_REF --
  *	A single in-memory page and the state information used to determine if
@@ -869,6 +869,8 @@ struct __wt_ref {
      * need to see that change when looking up our slot in the page's index structure.
      */
     WT_PAGE *volatile home;        /* Reference page */  // home指的是parent节点
+    // 该字段表示该页在父页的索引，即通过home->intl.__index->index[pindex_hint]，可以索引到当前页面
+    // 注意该hint不一定准确，参考：__ref_index_slot函数
     volatile uint32_t pindex_hint; /* Reference page index hint */
 
 #define WT_REF_DISK 0        /* Page is on disk */
@@ -882,10 +884,11 @@ struct __wt_ref {
     volatile uint32_t state; /* Page state */
 
     /*
-     * Address: on-page cell if read from backing block, off-page WT_ADDR if instantiated in-memory,
-     * or NULL if page created in-memory.
+     * Address: on-page is cell type if read from backing block, off-page is WT_ADDR type if instantiated in-memory,
+     * or is NULL if page created in-memory.
      */
-    void *addr; // TODO: WTF, 不懂
+    // addr表示ref->page的地址，总共有三种类型，详情看上面的注释
+    void *addr;
 
     /*
      * The child page's key.  Do NOT change this union without reviewing
@@ -1282,6 +1285,11 @@ struct __wt_insert_head {
  * never re-enter this code: if we already have a split generation, leave it alone. If our caller is
  * examining an index, we don't want the oldest split generation to move forward and potentially
  * free it.
+ */
+/* Splits遍历会话列表，检查何时释放被替换的结构是安全的。
+ * 在线程进入检查页索引(通过分割交换)的代码之前，它将当前分割生成的副本发布到它的会话中。
+ * 如果我们已经有了分裂的一代，那就别管它了。如果调用者正在检查一个索引，我们不希望最老的分裂代向前移动并释放它。
+ * TODO: 注释没看明白
  */
 #define WT_ENTER_PAGE_INDEX(session)                                         \
     do {                                                                     \
