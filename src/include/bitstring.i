@@ -60,12 +60,25 @@
  * $FreeBSD: src/sys/sys/bitstring.h,v 1.5 2005/01/07 02:29:23 imp Exp $
  */
 
+/*
+ * 第bit个bite属于第几个字节
+ * eg：
+ * 第1个bit属于第零个字节
+ * 第8个bit属于第二个字节
+ * 第10个bit属于第二个字节
+ */
 				/* byte of the bitstring bit is in */
 #define	__bit_byte(bit)	((bit) >> 3)
 
 				/* mask for the bit within its byte */
 #define	__bit_mask(bit)	(1 << ((bit) & 0x7))
 
+/* nbits个bit需要用多少个字节表示
+ * eg:
+ * 8个bit，需要一个字节
+ * 10个bit，需要两个字节
+ * ...
+ */
 				/* Bytes in a bitstring of nbits */
 #define	__bitstr_size(nbits) (((nbits) + 7) >> 3)
 
@@ -90,6 +103,11 @@ __bit_test(uint8_t *bitf, uint64_t bit)
 	return ((bitf[__bit_byte(bit)] & __bit_mask(bit)) != 0);
 }
 
+/*
+ * 将第bit位的bit设置为1。bitf是bit array
+ * eg: bit = 10
+ * 会将第1个字节的第2位设置为1
+ */
 /*
  * __bit_set --
  *	Set one bit in name.

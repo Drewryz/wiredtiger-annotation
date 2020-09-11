@@ -71,6 +71,12 @@ err:
     return (ret);
 }
 
+// reading here 2020-9-10-20:23
+/*
+ * 比如entries为10， 将下面这些bit置为1。大致如此。
+ * 1        1       1           1       1
+ * 0    1   2   3   4   5   6   7   8   9   
+ */  
 /*
  * __inmem_row_leaf_slots --
  *     Figure out the interesting slots of a page for random search, up to the specified depth.
@@ -192,6 +198,7 @@ switch_and_jump:
           EINVAL, "operation tracking for WT-5043: %s took longer than 5 minutes", session->name);
 #endif
 
+        // TODO: reading here 2020-9-10-21:37
         /*
          * Figure out what the key looks like.
          */
