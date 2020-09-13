@@ -6,6 +6,7 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
 // reading here 2020-9-3-17:24
 #include "wt_internal.h"
 
@@ -61,7 +62,7 @@ __wt_row_leaf_keys(WT_SESSION_IMPL *session, WT_PAGE *page)
     /* Instantiate the keys. */
     for (rip = page->pg_row, i = 0; i < page->entries; ++rip, ++i)
         if (__bit_test(tmp->mem, i))
-            WT_ERR(__wt_row_leaf_key_work(session, page, rip, key, true));
+            WT_ERR(__wt_row_leaf_key_work(session, page, rip, key, true)); // TODO: reading here 2020-9-12-19:38
 
     F_SET_ATOMIC(page, WT_PAGE_BUILD_KEYS);
 
@@ -120,11 +121,13 @@ __wt_row_leaf_key_copy(WT_SESSION_IMPL *session, WT_PAGE *page, WT_ROW *rip, WT_
 
     /* The return buffer may only hold a reference to a key, copy it. */
     if (!WT_DATA_IN_ITEM(key))
-        WT_RET(__wt_buf_set(session, key, key->data, key->size));
+        WT_RET(__wt_buf_set(session, key, key->data, key->size)); // TODO: 没搞明白。。。
 
     return (0);
 }
 
+// 整体说来，根据rip_arg->__key的类型，初始化keyb
+// TODO: 这里面涉及到的复杂的循环和条件判断和key的前缀压缩有关，与主流程关系不大，先跳过
 /*
  * __wt_row_leaf_key_work --
  *     Return a reference to, a row-store leaf-page key, optionally instantiate the key into the
@@ -160,7 +163,7 @@ __wt_row_leaf_key_work(
 
     btree = S2BT(session);
     unpack = &_unpack;
-    rip = rip_arg;
+    rip = rip_arg; // rip初始化为caller传来的rip_arg，其中有__key字段
 
     jump_rip = NULL;
     jump_slot_offset = 0;
@@ -210,6 +213,7 @@ switch_and_jump:
             keyb->size = size;
 
             /*
+             * 如果这是我们最初想要的键，我们不关心是向前还是向后滚动，或者它是否是溢出键，这就是我们想要的。这种情况通常不会发生，因为前端的快速路径代码在调用我们之前就已经知道了。
              * If this is the key we originally wanted, we don't care if we're rolling forward or
              * backward, or if it's an overflow key or not, it's what we wanted. This shouldn't
              * normally happen, the fast-path code that front-ends this function will have figured
@@ -352,6 +356,7 @@ switch_and_jump:
             goto switch_and_jump;
         }
 
+        // 这个函数写的如此dirty的原因是因为key prefix compression。
         /*
          * 5: an on-page reference to a key that's prefix compressed.
          *	If rolling backward, keep looking for something we can
@@ -433,6 +438,7 @@ next:
      * example, as long as the binary search only touches one-half of the page, the only keys we
      * instantiate will be in that half of the page).
      */
+    // 将rip_arg指向的__key初始化成WT_IKEY
     if (instantiate) {
         copy = WT_ROW_KEY_COPY(rip_arg);
         WT_IGNORE_RET_BOOL(__wt_row_leaf_key_info(page, copy, &ikey, &cell, NULL, NULL));
@@ -523,7 +529,7 @@ __wt_row_ikey(
         WT_ASSERT(session, __wt_atomic_cas_ptr(&ref->ref_ikey, (WT_IKEY *)oldv, ikey));
     }
 #else
-    ref->ref_ikey = ikey;
+    ref->ref_ikey = ikey; // TODO: ref_ikey表示的是什么？
 #endif
     return (0);
 }

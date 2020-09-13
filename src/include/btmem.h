@@ -608,6 +608,10 @@ struct __wt_page {
     }                       \
     while (0)
 
+        // WT_ROW的内部仅仅有一个void* __key
+        // struct __wt_row { /* On-page key, on-page cell, or off-page WT_IKEY */
+        //     void *volatile __key;
+        // };
         /* Row-store leaf page. */
         WT_ROW *row; /* Key/value pairs */
 #undef pg_row

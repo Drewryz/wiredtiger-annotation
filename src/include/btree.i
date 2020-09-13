@@ -746,6 +746,8 @@ __wt_ref_key_clear(WT_REF *ref)
     ref->ref_recno = 0;
 }
 
+// 这个函数根据copy返回leaf page row的key信息
+// copy应该为WT_ROW.__key
 /*
  * __wt_row_leaf_key_info --
  *     Return a row-store leaf page key referenced by a WT_ROW if it can be had without unpacking a
@@ -761,6 +763,21 @@ __wt_row_leaf_key_info(
     v = (uintptr_t)copy;
 
 /*
+ * struct __wt_ikey {
+ *   uint32_t size;
+ *   uint32_t cell_offset;
+ *   #define WT_IKEY_DATA(ikey) ((void *)((uint8_t *)(ikey) + sizeof(WT_IKEY)))
+ * };
+ * 
+ * struct __wt_row { 
+ *   void *volatile __key;
+ * };
+ * 叶子页的 WT_ROW.__key会指向两个地方：
+ * 1. on-pace WT_CELL (未初始化)
+ * 2. WT_IKEY (已初始化)
+ * TODO: 没太看明白，这两者有什么区别。
+ * 另外，on-page keys有两种状态。如果key是一个简单的key，key的offset/size被编
+ * 码在指针中。否则key的offset是key的on-page cell。
  * A row-store leaf page key is in one of two places: if instantiated,
  * the WT_ROW pointer references a WT_IKEY structure, otherwise, it
  * references an on-page offset.  Further, on-page keys are in one of
@@ -769,6 +786,7 @@ __wt_row_leaf_key_info(
  * offset/size is encoded in the pointer.  Otherwise, the offset is to
  * the key's on-page cell.
  *
+ * 
  * Now the magic: allocated memory must be aligned to store any standard
  * type, and we expect some standard type to require at least quad-byte
  * alignment, so allocated memory should have some clear low-order bits.
@@ -777,7 +795,12 @@ __wt_row_leaf_key_info(
  * pointer to mark the other bits of the pointer as encoding the key's
  * location and length.  This breaks if allocated memory isn't aligned,
  * of course.
- *
+
+ * 由于分配的内存是4字节对齐的，所以用最低的两位作为一个标识：
+ * 01: 标识 on-page cell
+ * 10: 标识 on-page key
+ * 11: 标识 on-page key/value pair
+ * 00: 标识 WT_IKEY指针
  * In this specific case, we use bit 0x01 to mark an on-page cell, bit
  * 0x02 to mark an on-page key, 0x03 to mark an on-page key/value pair,
  * otherwise it's a WT_IKEY reference. The bit pattern for on-page cells
