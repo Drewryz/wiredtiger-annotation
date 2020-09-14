@@ -651,6 +651,7 @@ __wt_ref_addr_free(WT_SESSION_IMPL *session, WT_REF *ref)
     ref->addr = NULL;
 }
 
+// 根据这个函数可以猜到：ref数组存储在ref->home页中
 /*
  * __wt_ref_key --
  *     Return a reference to a row-store internal page key as cheaply as possible.
@@ -688,10 +689,10 @@ __wt_ref_key(WT_PAGE *page, WT_REF *ref, void *keyp, size_t *sizep)
 #define WT_IK_ENCODE_KEY_OFFSET(v) ((uintptr_t)(v) << 1)
 #define WT_IK_DECODE_KEY_OFFSET(v) (((v)&0xFFFFFFFF) >> 1)
     v = (uintptr_t)ref->ref_ikey;
-    if (v & WT_IK_FLAG) {
+    if (v & WT_IK_FLAG) { // on-page key
         *(void **)keyp = WT_PAGE_REF_OFFSET(page, WT_IK_DECODE_KEY_OFFSET(v));
         *sizep = WT_IK_DECODE_KEY_LEN(v);
-    } else {
+    } else { // WT_IKEY
         *(void **)keyp = WT_IKEY_DATA(ref->ref_ikey);
         *sizep = ((WT_IKEY *)ref->ref_ikey)->size;
     }

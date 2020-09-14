@@ -183,7 +183,7 @@ __check_leaf_key_range(
             return (0);
         }
     }
-
+    // page.key <= serch key < (page+1).key
     /*
      * Check if the search key is greater than or equal to the starting key for the parent's next
      * page.
@@ -200,7 +200,7 @@ __check_leaf_key_range(
 
     return (0);
 }
-// cbt &cbt->iface.key true  null false null
+
 /*
  * __wt_row_search --
  *     Search a row-store tree for a specific key.
@@ -257,18 +257,19 @@ __wt_row_search(WT_CURSOR_BTREE *cbt, WT_ITEM *srch_key, bool insert, WT_REF *le
      * (for example, when re-instantiating a page in memory, in that case we know the target must be
      * on the current page).
      */
-    if (leaf != NULL) {
+    // TODO: reding here 2020-9-14-17:57
+    if (leaf != NULL) { // 指定了页，则在页中搜索
         if (!leaf_safe) {
             WT_RET(__check_leaf_key_range(session, srch_key, leaf, cbt));
             *leaf_foundp = cbt->compare == 0;
             if (!*leaf_foundp)
-                return (0);
+                return (0); // srch_key不在leaf中，直接返回
         }
 
         current = leaf;
         goto leaf_only;
     }
-
+    // TODO: reading here 2020-9-14-21:47. 指定页的逻辑已经读完。
     if (0) {
 restart:
         /*
@@ -460,15 +461,15 @@ leaf_only:
      */
     if (insert && descend_right) {
         cbt->append_tree = 1;
-
+        // TODO: reading here 2020-9-14-18:34
+        // TODO: 下面的代码段，ins_head的取值没有搞明白
         if (page->entries == 0) {
-            cbt->slot = WT_ROW_SLOT(page, page->pg_row);
+            cbt->slot = WT_ROW_SLOT(page, page->pg_row); // 这里slot索引到第一个entry，即 slot == 0
 
             F_SET(cbt, WT_CBT_SEARCH_SMALLEST);
             ins_head = WT_ROW_INSERT_SMALLEST(page);
         } else {
-            cbt->slot = WT_ROW_SLOT(page, page->pg_row + (page->entries - 1));
-
+            cbt->slot = WT_ROW_SLOT(page, page->pg_row + (page->entries - 1)); // 这里slot索引到最后一个entry，即 slot == entries-1
             ins_head = WT_ROW_INSERT_SLOT(page, cbt->slot);
         }
 
@@ -535,13 +536,14 @@ leaf_only:
     if (0) {
 leaf_match:
         cbt->compare = 0;
-        cbt->slot = WT_ROW_SLOT(page, rip);
+        cbt->slot = WT_ROW_SLOT(page, rip); // 刚好找到，rip.__key == srch_key
         return (0);
     }
 
     /*
      * We didn't find an exact match in the WT_ROW array.
-     *
+     * base是二分查找中最小的大于key的索引.
+     * 例如，对于这个列表：[1, 3, 5, 7, 9],当搜索关键词是2时，base为1, arr[1]是最小的大于2的元素
      * Base is the smallest index greater than key and may be the 0th index
      * or the (last + 1) index.  Set the slot to be the largest index less
      * than the key if that's possible (if base is the 0th index it means
@@ -565,8 +567,8 @@ leaf_match:
         ins_head = WT_ROW_INSERT_SMALLEST(page);
     } else {
         cbt->compare = -1;
-        cbt->slot = base - 1;
-
+        cbt->slot = base - 1; // Set the slot to be the largest index less than the key
+        
         ins_head = WT_ROW_INSERT_SLOT(page, cbt->slot);
     }
 

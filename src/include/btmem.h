@@ -235,7 +235,8 @@ struct __wt_ovfl_reuse {
 /*
  * WT_PAGE_LOOKASIDE --
  *	Information for on-disk pages with lookaside entries.
- *
+ * 
+ * 该信息用于决定是否需要读取被驱逐到lookaside的历史，以及何时不再需要它。
  * This information is used to decide whether history evicted to lookaside is
  * needed for a read, and when it is no longer needed at all. We track the
  * newest update written to the disk image in `max_ondisk_ts`, and the oldest
@@ -297,6 +298,11 @@ struct __wt_page_modify {
     size_t bytes_dirty;
 
     /*
+     * reconcile页面时，结果是一个或多个替换块。一个替换块可能处于两种状态之一:
+     * 1. 它被写入磁盘，因此我们有一个块地址。
+     * 2. 或者它包含未解决的修改，我们有一个磁盘映像，其中有一个未解决修改的列表。
+     * 前者是常见的情况:我们只在驱逐页面时构建未解决的修改列表，并且我们只希望在热页面太大而无法保存在内存中的情况下看到被驱逐的页面上未解决的修改。
+     * 换句话说，检查点将跳过未解决的修改，并且将写入块，而不是构建未解决修改的列表。
      * When pages are reconciled, the result is one or more replacement blocks. A replacement block
      * can be in one of two states: it was written to disk, and so we have a block address, or it
      * contained unresolved modifications and we have a disk image for it with a list of those
@@ -321,7 +327,7 @@ struct __wt_page_modify {
 
             /* The page has lookaside entries. */
             WT_PAGE_LOOKASIDE page_las;
-        } r;
+        } r; // 第一种情况
 #undef mod_replace
 #define mod_replace u1.r.replace
 #undef mod_disk_image
@@ -374,12 +380,12 @@ struct __wt_page_modify {
                 WT_PAGE_LOOKASIDE page_las;
             } * multi;
             uint32_t multi_entries; /* Multiple blocks element count */
-        } m;
+        } m; // 第二种情况
 #undef mod_multi
 #define mod_multi u1.m.multi
 #undef mod_multi_entries
 #define mod_multi_entries u1.m.multi_entries
-    } u1;
+    } u1; // 这个结构体应该和reconcile有关
 
     /*
      * Internal pages need to be able to chain root-page splits and have a special transactional
@@ -905,7 +911,7 @@ struct __wt_ref {
 #undef ref_recno
 #define ref_recno key.recno
 #undef ref_ikey
-#define ref_ikey key.ikey
+#define ref_ikey key.ikey // 每个页都有一个page key，表示该页上的所有item的key都大于等于page key
 
     WT_PAGE_DELETED *page_del;   /* Deleted page information */
     WT_PAGE_LOOKASIDE *page_las; /* Lookaside information */
@@ -1071,7 +1077,12 @@ struct __wt_ikey {
 #define WT_IKEY_DATA(ikey) ((void *)((uint8_t *)(ikey) + sizeof(WT_IKEY)))
 };
 
-/*
+/* 
+ * 当page上的元素发生更新时，wt会分配一个WT_UPDATE数组。page上的每个元素都会对应数组中的一个元素。
+ * 可能会是这样的：
+ * WT_ROW[entries]
+ * WT_UPDATE[entries]
+ * WT_ROW[i]和WT_UPDATE[i]是对应的。这也解释了为什么UPDATE没有key的原因
  * WT_UPDATE --
  *	Entries on leaf pages can be updated, either modified or deleted.
  *	Updates to entries referenced from the WT_ROW and WT_COL arrays are
@@ -1143,7 +1154,17 @@ struct __wt_update {
  */
 #define WT_MODIFY_MEM_FRACTION 10
 
-/*
+/* 
+ * insert_arrary[i] 表示insert_array[i]链表中所有元素的key都大于row_array[i]，且小于row_arrry[i+1]
+ * 比如：一个页的key序列为: 1 10 99 200
+ * 插入时会对该页分配长度为5的WT_INSERT_HEAD arr
+ * arr[0]key范围为 -无穷, 1)
+ * arr[0]key范围为 (1, 10)
+ * arr[1]key范围为 (10, 99)
+ * ...
+ * arr[3]key范围为 (200, +无穷)
+ * arr[4]key范围为 (-无穷, 1)
+ * 因为一个key范围可能会插入多条新记录，因此WT_INSERT_HEAD是一个跳跃表，主要为了保持key的顺序
  * WT_INSERT --
  *
  * Row-store leaf pages support inserts of new K/V pairs. When the first K/V pair is inserted, the
@@ -1154,7 +1175,7 @@ struct __wt_update {
  *
  * The additional slot is because it's possible to insert items smaller than any existing key on the
  * page: for that reason, the first slot of the insert array holds keys smaller than any other key
- * on the page.
+ * on the page. // TODO: 这里应该不是the first slot而是the last slot
  *
  * In column-store variable-length run-length encoded pages, a single indx entry may reference a
  * large number of records, because there's a single on-page entry representing many identical
@@ -1175,7 +1196,7 @@ struct __wt_insert {
     union {
         uint64_t recno; /* column-store record number */
         struct {
-            uint32_t offset; /* row-store key data start */
+            uint32_t offset; /* row-store key data start */ // 从WT_INSERT_KEY看来，__wt_insert结构体后面存储的是key和data
             uint32_t size;   /* row-store key data size */
         } key;
     } u;

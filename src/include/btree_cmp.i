@@ -95,6 +95,9 @@ __wt_lex_compare(const WT_ITEM *user_item, const WT_ITEM *tree_item)
     return ((usz == tsz) ? 0 : (usz < tsz) ? -1 : 1);
 }
 
+// if user_item == tree_item, *cmpp = 0
+// if user_item < tree_item, *cmpp < 0
+// if user_item > tree_item, *cmpp > 0
 /*
  * __wt_compare --
  *     The same as __wt_lex_compare, but using the application's collator function when configured.

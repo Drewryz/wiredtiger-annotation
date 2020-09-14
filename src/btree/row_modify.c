@@ -6,6 +6,7 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
 // TODO: reading here 2020-9-13-19:21
 
 #include "wt_internal.h"
@@ -37,8 +38,9 @@ err:
     __wt_free(session, modify);
     return (ret);
 }
-// cbt, &cbt->iface.key, &cbt->iface.value, NULL, 4, false
+
 /*
+ * 整体上说将改变的元素建链
  * __wt_row_modify --
  *     Row-store insert, update and delete.
  */
@@ -78,7 +80,7 @@ __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, 
      * Insert: allocate an insert array as necessary, build a WT_INSERT and WT_UPDATE structure
      * pair, and call a serialized function to insert the WT_INSERT structure.
      */
-    if (cbt->compare == 0) {
+    if (cbt->compare == 0) { // compare为0表示找到，此时的modify操作为update，否则为insert
         if (cbt->ins == NULL) {
             /* Allocate an update array as necessary. */
             WT_PAGE_ALLOC_AND_SWAP(session, page, mod->mod_row_update, upd_entry, page->entries);
@@ -119,10 +121,10 @@ __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, 
          * Point the new WT_UPDATE item to the next element in the list. If we get it right, the
          * serialization function lock acts as our memory barrier to flush this write.
          */
-        upd->next = old_upd;
+        upd->next = old_upd; // 对同一个key的更新是一个链表，这里将最新的更新放在链表的最前面
 
         /* Serialize the update. */
-        WT_ERR(__wt_update_serial(session, page, upd_entry, &upd, upd_size, exclusive));
+        WT_ERR(__wt_update_serial(session, page, upd_entry, &upd, upd_size, exclusive)); // TODO: 什么是serial？
     } else {
         /*
          * Allocate the insert array as necessary.
@@ -185,7 +187,7 @@ __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, 
             for (i = 0; i < skipdepth; i++)
                 ins->next[i] = cbt->next_stack[i];
 
-        /* Insert the WT_INSERT structure. */
+        /* Insert the WT_INSERT structure. */ // TODO: 什么是serial？
         WT_ERR(__wt_insert_serial(
           session, page, cbt->ins_head, cbt->ins_stack, &ins, ins_size, skipdepth, exclusive));
     }
@@ -281,6 +283,7 @@ __wt_update_alloc(WT_SESSION_IMPL *session, const WT_ITEM *value, WT_UPDATE **up
     return (0);
 }
 
+// TODO: 暂时跳过
 /*
  * __wt_update_obsolete_check --
  *     Check for obsolete updates.
