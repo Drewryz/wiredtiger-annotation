@@ -60,7 +60,7 @@ typedef enum __wt_cache_op {
 #define WT_LAS_SWEEP_SEC 2
 
 /*
- * WiredTiger cache structure.
+ * WiredTiger cache structure. WT_CACHE
  */
 struct __wt_cache {
     /*
@@ -121,7 +121,7 @@ struct __wt_cache {
                                         to during checkpoint scrubs */
     double eviction_scrub_target;      /* Current scrub target */
 
-    u_int overhead_pct;         /* Cache percent adjustment */
+    u_int overhead_pct;         /* Cache percent adjustment */ // TODO: 这个变量是干嘛用的
     uint64_t cache_max_wait_us; /* Maximum time an operation waits for
                                  * space in cache */
 
@@ -266,7 +266,9 @@ struct __wt_cache {
 
 /*
  * WT_CACHE_POOL --
- *	A structure that represents a shared cache.
+ *	A structure that represents a shared cache. 
+ * cache和cache_pool是两个不同的缓存模式，具体哪里不同现在还不知道。
+ * mongodb使用cache模式，cache_pool暂时忽略。
  */
 struct __wt_cache_pool {
     WT_SPINLOCK cache_pool_lock;

@@ -576,6 +576,7 @@ struct __wt_page {
  * but it's not always required: for example, if a page is locked for splitting, or being created or
  * destroyed.
  */
+// 获取page的ref array
 #define WT_INTL_INDEX_GET_SAFE(page) ((page)->u.intl.__index)
 #define WT_INTL_INDEX_GET(session, page, pindex)                          \
     do {                                                                  \

@@ -6,6 +6,8 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
+
 #include "wt_internal.h"
 
 /*
@@ -402,12 +404,12 @@ restart:
          * page split race.
          */
         if (pindex->entries == base) {
-append:
+append: // 存在竞争则重试，否则往下执行descend
             if (__wt_split_descent_race(session, current, parent_pindex))
                 goto restart;
         }
 
-descend:
+descend: // btree下降一个level
         /* Encourage races. */
         WT_DIAGNOSTIC_YIELD;
 

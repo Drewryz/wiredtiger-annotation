@@ -6,6 +6,8 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
+
 /*
  * __wt_cache_aggressive --
  *     Indicate if the cache is operating in aggressive mode.
@@ -51,6 +53,7 @@ __wt_cache_read_gen_bump(WT_SESSION_IMPL *session, WT_PAGE *page)
     if (page->read_gen > __wt_cache_read_gen(session))
         return;
 
+    // TODO: 这里的代码注释没有看明白。hazard pointer需要搞一下。
     /*
      * We set read-generations in the future (where "the future" is measured by increments of the
      * global read generation). The reason is because when acquiring a new hazard pointer for a
@@ -100,6 +103,7 @@ __wt_page_evict_soon(WT_SESSION_IMPL *session, WT_REF *ref)
     ref->page->read_gen = WT_READGEN_OLDEST;
 }
 
+// TODO: reading here 2020-9-17-12:01
 /*
  * __wt_cache_pages_inuse --
  *     Return the number of pages in use.
@@ -217,7 +221,7 @@ __wt_cache_update_lookaside_score(
         (void)__wt_atomic_addi32(&cache->evict_lookaside_score, 1);
     else if (score < global_score && global_score > 0)
         (void)__wt_atomic_subi32(&cache->evict_lookaside_score, 1);
-}
+} // TODO: 不懂
 
 /*
  * __wt_session_can_wait --
@@ -238,7 +242,7 @@ __wt_session_can_wait(WT_SESSION_IMPL *session)
      * holding the schema lock, we don't want this thread to block for eviction.
      */
     return (!F_ISSET(session, WT_SESSION_IGNORE_CACHE_SIZE | WT_SESSION_LOCKED_SCHEMA));
-}
+} // TODO: 不懂
 
 /*
  * __wt_eviction_clean_needed --

@@ -6,6 +6,8 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
+// reading here 2020-9-15-11:15
 /*
  * __insert_simple_func --
  *     Worker function to add a WT_INSERT entry to the middle of a skiplist.

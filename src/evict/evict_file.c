@@ -44,7 +44,7 @@ __wt_evict_file(WT_SESSION_IMPL *session, WT_CACHE_OP syncop)
     walk_flags =
       WT_READ_CACHE | WT_READ_NO_EVICT | (syncop == WT_SYNC_CLOSE ? WT_READ_LOOKASIDE : 0);
     next_ref = NULL;
-    WT_ERR(__wt_tree_walk(session, &next_ref, walk_flags));
+    WT_ERR(__wt_tree_walk(session, &next_ref, walk_flags)); // reading here 2020-9-17-18:21
     while ((ref = next_ref) != NULL) {
         page = ref->page;
 

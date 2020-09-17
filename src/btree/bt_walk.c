@@ -258,7 +258,8 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
 /*
  * __tree_walk_internal --
  *     Move to the next/previous page in the tree.
- */
+ */ 
+//     return (__tree_walk_internal(session, refp, NULL, NULL, NULL, flags));
 // TODO: 这个函数只是在遍历树，那它的输出是什么呢？
 static inline int
 __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp,
@@ -306,7 +307,7 @@ __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp
      * (4) truncating pages in a range (fast truncate);
      * (5) skipping pages based on outside information (compaction);
      * (6) cursor scans (applications).
-     *
+     * 除了游标扫描和压缩之外，遍历仅限于缓存，不读取任何页面。
      * Except for cursor scans and compaction, the walk is limited to the
      * cache, no pages are read.  In all cases, hazard pointers protect the
      * walked pages from eviction.

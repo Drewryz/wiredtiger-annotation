@@ -8,6 +8,9 @@
 
 #include "wt_internal.h"
 
+// 与lookaside table相关。 lookaside == cache overflow, 参见：
+// https://docs.mongodb.com/manual/reference/parameters/
+
 /*
  * When an operation is accessing the lookaside table, it should ignore the cache size (since the
  * cache is already full), any pages it reads should be evicted before application data, and the

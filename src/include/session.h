@@ -226,8 +226,11 @@ struct __wt_session_impl {
 #define WT_GEN_HAZARD 3     /* Hazard pointer */
 #define WT_GEN_SPLIT 4      /* Page splits */
 #define WT_GENERATIONS 5    /* Total generation manager entries */
-    volatile uint64_t generations[WT_GENERATIONS]; // conn对象也有同样的这个东西，目测是个锁
+    volatile uint64_t generations[WT_GENERATIONS]; // 可以看成时钟吧
 
+    /*
+     * 在session被关闭后，session的内存依然存在。由于这些内存被控制线程访问。
+     */
     /*
      * Session memory persists past session close because it's accessed by threads of control other
      * than the thread owning the session. For example, btree splits and hazard pointers can "free"
@@ -259,10 +262,10 @@ struct __wt_session_impl {
  * The hazard pointer array grows as necessary, initialize with 250 slots.
  */
 #define WT_SESSION_INITIAL_HAZARD_SLOTS 250
-    uint32_t hazard_size;  /* Hazard pointer array slots */
-    uint32_t hazard_inuse; /* Hazard pointer array slots in-use */
-    uint32_t nhazard;      /* Count of active hazard pointers */
-    WT_HAZARD *hazard;     /* Hazard pointer array */
+    uint32_t hazard_size;  /* Hazard pointer array slots */ // hazard数组大小，这个大小是可以增长的
+    uint32_t hazard_inuse; /* Hazard pointer array slots in-use */ // 实际hazard指针的个数，类似arrayList
+    uint32_t nhazard;      /* Count of active hazard pointers */ // 活跃的hazard指针个数
+    WT_HAZARD *hazard;     /* Hazard pointer array */  // hazard指针数组
 
     /*
      * Operation tracking.

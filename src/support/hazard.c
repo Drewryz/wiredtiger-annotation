@@ -6,6 +6,8 @@
  * See the file LICENSE for redistribution information.
  */
 
+// ar
+
 #include "wt_internal.h"
 
 #ifdef HAVE_DIAGNOSTIC
@@ -112,7 +114,7 @@ __wt_hazard_set(WT_SESSION_IMPL *session, WT_REF *ref, bool *busyp
          * the array.
          */
         for (hp = session->hazard + session->nhazard;; ++hp) {
-            if (hp >= session->hazard + session->hazard_inuse)
+            if (hp >= session->hazard + session->hazard_inuse) // 搜索到数组末端，重新搜索
                 hp = session->hazard;
             if (hp->ref == NULL)
                 break;
@@ -288,6 +290,7 @@ hazard_get_reference(WT_SESSION_IMPL *session, WT_HAZARD **hazardp, uint32_t *ha
     WT_ORDERED_READ(*hazardp, session->hazard);
 }
 
+// reading here 2020-9-17-17:15
 /*
  * __wt_hazard_check --
  *     Return if there's a hazard pointer to the page in the system.
@@ -322,6 +325,7 @@ __wt_hazard_check(WT_SESSION_IMPL *session, WT_REF *ref, WT_SESSION_IMPL **sessi
      * started our check.
      */
     WT_ORDERED_READ(session_cnt, conn->session_cnt);
+    // TODO: 这里的时间复杂度为o(n2)，可不可以更快呢
     for (s = conn->sessions, i = j = max = walk_cnt = 0; i < session_cnt; ++s, ++i) {
         if (!s->active)
             continue;
