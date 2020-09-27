@@ -387,6 +387,7 @@ __wt_cache_page_image_incr(WT_SESSION_IMPL *session, uint32_t size)
 /*
  * __wt_cache_page_evict --
  *     Evict pages from the cache.
+ *     这个函数所谓的Evict page，只是对一些数据做了更改
  */
 static inline void
 __wt_cache_page_evict(WT_SESSION_IMPL *session, WT_PAGE *page)
@@ -1656,7 +1657,7 @@ __wt_page_swap_func(WT_SESSION_IMPL *session, WT_REF *held, WT_REF *want, uint32
     if (held == want)
         return (0);
 
-    /* Get the wanted page. */
+    /* Get the wanted page. */ // TODO: reading here 2020-9-21-12:00
     ret = __wt_page_in_func(session, want, flags
 #ifdef HAVE_DIAGNOSTIC
       ,

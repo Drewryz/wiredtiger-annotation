@@ -8,16 +8,17 @@
 
 #define WT_RECNO_OOB 0 /* Illegal record number */
 
+// 这些宏表示遍历btree时的flag
 /* AUTOMATIC FLAG VALUE GENERATION START */
-#define WT_READ_CACHE 0x0001u
+#define WT_READ_CACHE 0x0001u   // 只读取cache中的page
 #define WT_READ_DELETED_CHECK 0x0002u
-#define WT_READ_DELETED_SKIP 0x0004u
+#define WT_READ_DELETED_SKIP 0x0004u // 读取到删除的page，则跳过
 #define WT_READ_IGNORE_CACHE_SIZE 0x0008u
 #define WT_READ_LOOKASIDE 0x0010u
 #define WT_READ_NOTFOUND_OK 0x0020u
 #define WT_READ_NO_GEN 0x0040u
 #define WT_READ_NO_SPLIT 0x0080u
-#define WT_READ_NO_WAIT 0x0100u
+#define WT_READ_NO_WAIT 0x0100u // 读取page时，不要等待（比如，page被加锁或者page在磁盘上都需要等待）
 #define WT_READ_PREV 0x0200u
 #define WT_READ_RESTART_OK 0x0400u
 #define WT_READ_SKIP_INTL 0x0800u

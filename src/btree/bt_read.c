@@ -567,6 +567,7 @@ err:
  * __wt_page_in_func --
  *     Acquire a hazard pointer to a page; if the page is not in-memory, read it from the disk and
  *     build an in-memory version.
+ * WTF，这么长的一个函数
  */
 int
 __wt_page_in_func(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags
@@ -589,7 +590,7 @@ __wt_page_in_func(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags
     if (F_ISSET(session, WT_SESSION_IGNORE_CACHE_SIZE))
         LF_SET(WT_READ_IGNORE_CACHE_SIZE);
 
-    /* Sanity check flag combinations. */
+    /* Sanity check flag combinations. */ /* 检查session标志组合的完成性 */
     WT_ASSERT(session, !LF_ISSET(WT_READ_DELETED_SKIP | WT_READ_NO_WAIT | WT_READ_LOOKASIDE) ||
         LF_ISSET(WT_READ_CACHE));
     WT_ASSERT(session, !LF_ISSET(WT_READ_DELETED_CHECK) || !LF_ISSET(WT_READ_DELETED_SKIP));
@@ -605,7 +606,7 @@ __wt_page_in_func(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags
 
     for (evict_skip = stalled = wont_need = false, force_attempts = 0, sleep_usecs = yield_cnt = 0;
          ;) {
-        switch (current_state = ref->state) {
+        switch (current_state = ref->state) { // 这个switch语句，也基本上都与读flag和ref flag相关
         case WT_REF_DELETED:
             if (LF_ISSET(WT_READ_DELETED_SKIP | WT_READ_NO_WAIT))
                 return (WT_NOTFOUND);
@@ -691,6 +692,7 @@ read:
 #ifdef HAVE_DIAGNOSTIC
             WT_RET(__wt_hazard_set(session, ref, &busy, func, line));
 #else
+            // TODO: 这里已经获取了ref的hazard pointer，下面这一坨东西是干嘛用的？
             WT_RET(__wt_hazard_set(session, ref, &busy));
 #endif
             if (busy) {
@@ -717,6 +719,7 @@ read:
              * Don't involve a thread resolving a transaction in forced eviction, they're usually
              * making the problem better.
              */
+            // TODO: reading here 2020-9-21-12:09
             if (evict_skip || F_ISSET(session, WT_SESSION_RESOLVING_TXN) ||
               LF_ISSET(WT_READ_NO_SPLIT) || btree->evict_disabled > 0 || btree->lsm_primary)
                 goto skip_evict;
@@ -767,7 +770,7 @@ skip_evict:
              */
             page = ref->page;
             if (page->read_gen == WT_READGEN_NOTSET) {
-                if (wont_need)
+                if (wont_need) // 没有其他线程使用该页面，标记为立刻eviction
                     page->read_gen = WT_READGEN_WONT_NEED;
                 else
                     __wt_cache_read_gen_new(session, page);
@@ -783,6 +786,10 @@ skip_evict:
              * or lookaside). If WT_READ_IGNORE_CACHE_SIZE was passed in explicitly, we're done. If
              * we set WT_READ_IGNORE_CACHE_SIZE because it was set in the session then make sure we
              * start a transaction.
+             * 
+             * 检查我们是否需要一个自动提交事务。启动事务可能触发驱逐，因此如果不允许驱逐，则跳过它。
+             * 这里的逻辑有点奇怪:一些代码路径完全禁止检查会话中的缓存大小，但仍然需要一个事务(例如，在更新元数据或lookaside时)。如果WT_READ_IGNORE_CACHE_SIZE被显式地传递，我们就完成了。
+             * 如果我们设置WT_READ_IGNORE_CACHE_SIZE，因为它是在会话中设置的，那么确保我们启动了一个事务。
              */
             return (LF_ISSET(WT_READ_IGNORE_CACHE_SIZE) &&
                   !F_ISSET(session, WT_SESSION_IGNORE_CACHE_SIZE) ?

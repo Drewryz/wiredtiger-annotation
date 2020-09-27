@@ -260,7 +260,7 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
  *     Move to the next/previous page in the tree.
  */ 
 //     return (__tree_walk_internal(session, refp, NULL, NULL, NULL, flags));
-// TODO: 这个函数只是在遍历树，那它的输出是什么呢？
+// 该函数后序遍历树，返回当前页的下一个页。关于树的后续遍历：https://zh.wikipedia.org/zh-hans/树的遍历
 static inline int
 __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp,
   int (*skip_func)(WT_SESSION_IMPL *, WT_REF *, void *, bool *), void *func_cookie, uint32_t flags)
@@ -268,6 +268,7 @@ __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp
     WT_BTREE *btree;
     WT_DECL_RET;
     WT_PAGE_INDEX *pindex;
+    // couple类似于prev, ref类似于cur,就像遍历链表一样，遍历btree的page
     WT_REF *couple, *ref, *ref_orig;
     uint64_t restart_sleep, restart_yield;
     uint32_t current_state, slot;
@@ -295,7 +296,7 @@ __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp
     if (btree->type != BTREE_ROW)
         LF_CLR(WT_READ_TRUNCATE);
 
-    prev = LF_ISSET(WT_READ_PREV) ? 1 : 0;
+    prev = LF_ISSET(WT_READ_PREV) ? 1 : 0; // prev决定遍历树的方向，是从左向右，还是从右向左
 
     /*
      * There are multiple reasons and approaches to walking the in-memory
@@ -335,8 +336,9 @@ __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp
      * Tree walks are special: they look inside page structures that splits may want to free.
      * Publish the tree is active during this window.
      */
-    WT_ENTER_PAGE_INDEX(session);
+    WT_ENTER_PAGE_INDEX(session); // TODO: 这里没有看懂
 
+    // 没有指定page，则从root开始
     /* If no page is active, begin a walk from the start/end of the tree. */
     if ((ref = ref_orig) == NULL) {
         if (0) {
@@ -446,8 +448,11 @@ descend:
             if (ref->pindex_hint != slot)
                 ref->pindex_hint = slot;
 
+            // 下面这一坨if else语句，基本上都与读flag和ref flag相关
+
             /*
              * If we see any child states other than deleted, the page isn't empty.
+             * 如果我们看到除了删除之外的任何子状态，页面就不是空的。
              */
             current_state = ref->state;
             if (current_state != WT_REF_DELETED && !LF_ISSET(WT_READ_TRUNCATE))
@@ -459,7 +464,7 @@ descend:
                  */
                 if (LF_ISSET(WT_READ_NO_WAIT) && current_state != WT_REF_MEM &&
                   current_state != WT_REF_LIMBO)
-                    break;
+                    break; // 页面不满足要求，则不读取
 
                 /* Skip lookaside pages if not requested. */
                 if (current_state == WT_REF_LOOKASIDE && !LF_ISSET(WT_READ_LOOKASIDE))
@@ -489,6 +494,7 @@ descend:
                     break;
             }
 
+            // TODO: reading here 2020-9-21-12:00
             ret = __wt_page_swap(
               session, couple, ref, WT_READ_NOTFOUND_OK | WT_READ_RESTART_OK | flags);
             if (ret == 0) {

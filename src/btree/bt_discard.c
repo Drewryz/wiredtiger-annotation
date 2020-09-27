@@ -62,17 +62,21 @@ __wt_page_out(WT_SESSION_IMPL *session, WT_PAGE **pagep)
      * Unless we have a dead handle or we're closing the database, we should never discard a dirty
      * page. We do ordinary eviction from dead trees until sweep gets to them, so we may not in the
      * WT_SYNC_DISCARD loop.
+     * TODO: 所以问题是，为什么connection设置了WT_CONN_CLOSING标识就会丢弃dirty page
      */
     if (F_ISSET(session->dhandle, WT_DHANDLE_DEAD) || F_ISSET(S2C(session), WT_CONN_CLOSING))
         __wt_page_modify_clear(session, page);
 
     /* Assert we never discard a dirty page or a page queue for eviction. */
+    /* 丢弃的页不能有脏数据，并且不能在LRU队列中 */
     WT_ASSERT(session, !__wt_page_is_modified(page));
     WT_ASSERT(session, !F_ISSET_ATOMIC(page, WT_PAGE_EVICT_LRU));
 
     /*
      * If a root page split, there may be one or more pages linked from the page; walk the list,
      * discarding pages.
+     * root页分裂，将会有一个或多个页链接到这个页。TODO: 所以root的分裂过程是什么？
+     * TODO: reading here 2020-9-27-12:02
      */
     switch (page->type) {
     case WT_PAGE_COL_INT:

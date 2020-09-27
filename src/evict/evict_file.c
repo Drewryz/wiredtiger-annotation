@@ -8,9 +8,16 @@
 
 #include "wt_internal.h"
 
+// ar
+
 /*
  * __wt_evict_file --
  *     Discard pages for a specific file.
+ * 整体逻辑：拿到树的每个page，然后根据syncop做一些操作。
+ * TODO: 每个case的业务代码没有看。因为涉及的东西有点多：
+ * reconciliation、__wt_evict、__wt_ref_out、__wt_illegal_value。
+ * reconciliation暂且跳过吧。其余的往下看。
+ * reading here. 2020-9-21-18:17
  */
 int
 __wt_evict_file(WT_SESSION_IMPL *session, WT_CACHE_OP syncop)
@@ -41,6 +48,7 @@ __wt_evict_file(WT_SESSION_IMPL *session, WT_CACHE_OP syncop)
     WT_RET(__wt_txn_update_oldest(session, WT_TXN_OLDEST_STRICT | WT_TXN_OLDEST_WAIT));
 
     /* Walk the tree, discarding pages. */
+    // eviction只会读cache中的页
     walk_flags =
       WT_READ_CACHE | WT_READ_NO_EVICT | (syncop == WT_SYNC_CLOSE ? WT_READ_LOOKASIDE : 0);
     next_ref = NULL;
@@ -68,6 +76,7 @@ __wt_evict_file(WT_SESSION_IMPL *session, WT_CACHE_OP syncop)
             WT_ERR(__wt_reconcile(session, ref, NULL, WT_REC_EVICT | WT_REC_VISIBLE_ALL, NULL));
 
         /*
+         * 我们不能驱逐刚刚返回给我们的页面(它标记了我们在树中的位置)。 移动到要evict页面的下一个页面。
          * We can't evict the page just returned to us (it marks our place in the tree), so move the
          * walk to one page ahead of the page being evicted. Note, we reconciled the returned page
          * first: if reconciliation of that page were to change the shape of the tree, and we did
