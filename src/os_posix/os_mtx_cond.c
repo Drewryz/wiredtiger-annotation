@@ -51,6 +51,7 @@ err:
  * __wt_cond_wait_signal --
  *     Wait on a mutex, optionally timing out. If we get it before the time out period expires, let
  *     the caller know.
+ *     等待互斥锁，可选择超时。如果我们在超时期满前收到它，让caller知道。
  */
 void
 __wt_cond_wait_signal(WT_SESSION_IMPL *session, WT_CONDVAR *cond, uint64_t usecs,
@@ -89,7 +90,7 @@ __wt_cond_wait_signal(WT_SESSION_IMPL *session, WT_CONDVAR *cond, uint64_t usecs
      * Assert we're not waiting longer than a second if not checking the run status.
      */
     WT_ASSERT(session, run_func != NULL || usecs <= WT_MILLION);
-    if (run_func != NULL && !run_func(session))
+    if (run_func != NULL && !run_func(session)) // eviciton线程不再运行，直接退出
         goto skipping;
 
     if (usecs > 0) {

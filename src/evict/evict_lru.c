@@ -265,6 +265,8 @@ __wt_evict_thread_chk(WT_SESSION_IMPL *session)
  * __wt_evict_thread_run --
  *     Entry function for an eviction thread. This is called repeatedly from the thread group code
  *     so it does not need to loop itself.
+ *     TODO: 这个函数会接连不断地被thread group调用。那么触发逻辑是什么呢？考虑__wt_thread_group_stop_one和__wt_thread_group_start_one函数
+ *  reading here. 2020-9-28-19:23
  */
 int
 __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
@@ -278,6 +280,8 @@ __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
     cache = conn->cache;
 
     if (conn->evict_server_running && __wt_spin_trylock(session, &cache->evict_pass_lock) == 0) {
+        // 同一时刻，只能有一个eviction thread变成server thread，负责扫描btree，并填充evict_queue。参见：
+        // https://developer.aliyun.com/article/69040
         /*
          * Cannot use WT_WITH_PASS_LOCK because this is a try lock. Fix when that is supported. We
          * set the flag on both sessions because we may call clear_walk when we are walking with the
@@ -299,11 +303,12 @@ __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
         if (was_intr)
             while (cache->pass_intr != 0 && F_ISSET(conn, WT_CONN_EVICTION_RUN) &&
               F_ISSET(thread, WT_THREAD_RUN))
-                __wt_yield();
+                __wt_yield(); // TODO:
         else {
             __wt_verbose(session, WT_VERB_EVICTSERVER, "%s", "sleeping");
 
             /* Don't rely on signals: check periodically. */
+            // 这个条件变量等待函数，除了会被signal唤醒之外，也会等待一段时间，然后自己醒过来(pthread_cond_timedwait)
             __wt_cond_auto_wait(session, cache->evict_cond, did_work, NULL);
             __wt_verbose(session, WT_VERB_EVICTSERVER, "%s", "waking");
         }
@@ -457,6 +462,7 @@ __evict_server(WT_SESSION_IMPL *session, bool *did_work)
 /*
  * __wt_evict_create --
  *     Start the eviction server.
+ * TODO: reading here. 2020-9-28-15:02
  */
 int
 __wt_evict_create(WT_SESSION_IMPL *session)
@@ -637,6 +643,7 @@ __evict_update_work(WT_SESSION_IMPL *session)
 /*
  * __evict_pass --
  *     Evict pages from memory.
+ * TODO: reading here 2020-9-28-20:00
  */
 static int
 __evict_pass(WT_SESSION_IMPL *session)

@@ -8,6 +8,8 @@
 
 #include "wt_internal.h"
 
+// ar
+
 /*
  * __thread_run --
  *     General wrapper for any thread.
@@ -22,10 +24,11 @@ __thread_run(void *arg)
     thread = (WT_THREAD *)arg;
     session = thread->session;
 
+    // 线程的loop
     for (;;) {
         if (!F_ISSET(thread, WT_THREAD_RUN))
             break;
-        if (!F_ISSET(thread, WT_THREAD_ACTIVE))
+        if (!F_ISSET(thread, WT_THREAD_ACTIVE)) // 没有激活则等待条件变量
             __wt_cond_wait(
               session, thread->pause_cond, WT_THREAD_PAUSE * WT_MILLION, thread->chk_func);
         WT_ERR(thread->run_func(session, thread));
@@ -157,6 +160,7 @@ __thread_group_resize(WT_SESSION_IMPL *session, WT_THREAD_GROUP *group, uint32_t
     /*
      * Call shrink to reduce the number of thread structures and running threads if required by the
      * change in group size.
+     * 如果需要更改组大小，则调用shrink来减少线程结构和正在运行的线程的数量。
      */
     WT_RET(__thread_group_shrink(session, group, new_max));
 
@@ -172,6 +176,7 @@ __thread_group_resize(WT_SESSION_IMPL *session, WT_THREAD_GROUP *group, uint32_t
 
     /*
      * Initialize the structures based on the previous group size, not the previous allocated size.
+     * 创建线程。
      */
     for (i = group->max; i < new_max; i++) {
         WT_ERR(__wt_calloc_one(session, &thread));

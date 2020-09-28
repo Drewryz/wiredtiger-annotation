@@ -2677,6 +2677,7 @@ wiredtiger_open(const char *home, WT_EVENT_HANDLER *event_handler, const char *c
     WT_ERR(__wt_backup_open(session));
 
     /* Start the worker threads and run recovery. */
+    /* 创建wt内部线程，梦开始的地方 */
     WT_ERR(__wt_connection_workers(session, cfg));
 
     /*

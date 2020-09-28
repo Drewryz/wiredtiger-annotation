@@ -262,7 +262,7 @@ struct __wt_connection_impl {
 
     size_t session_scratch_max; /* Max scratch memory per session */
 
-    WT_CACHE *cache;              /* Page cache */
+    WT_CACHE *cache;              /* Page cache */ // 一个connecion对应一个cache
     volatile uint64_t cache_size; /* Cache size (either statically
                                      configured or the current size
                                      within a cache pool). */
@@ -522,7 +522,7 @@ struct __wt_connection_impl {
 #define WT_CONN_DEBUG_REALLOC_EXACT 0x00000200u
 #define WT_CONN_DEBUG_SLOW_CKPT 0x00000400u
 #define WT_CONN_EVICTION_NO_LOOKASIDE 0x00000800u
-#define WT_CONN_EVICTION_RUN 0x00001000u
+#define WT_CONN_EVICTION_RUN 0x00001000u // 用于标识wt的eviction线程是否在运行
 #define WT_CONN_INCR_BACKUP 0x00002000u
 #define WT_CONN_IN_MEMORY 0x00004000u
 #define WT_CONN_LEAK_MEMORY 0x00008000u
