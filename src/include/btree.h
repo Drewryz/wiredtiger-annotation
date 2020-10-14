@@ -216,6 +216,7 @@ struct __wt_btree {
     uint64_t evict_priority;      /* Relative priority of cached pages */
     uint32_t evict_walk_progress; /* Eviction walk progress */
     uint32_t evict_walk_target;   /* Eviction walk target */
+    // evict_walk_period越大，表示evict时进入evict queue的page越少
     u_int evict_walk_period;      /* Skip this many LRU walks */
     u_int evict_walk_saved;       /* Saved walk skips for checkpoints */
     u_int evict_walk_skips;       /* Number of walks skipped */

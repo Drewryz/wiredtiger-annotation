@@ -8,6 +8,7 @@
 #include <wiredtiger.h>
 #include <wiredtiger_ext.h>
 #include <stdio.h>
+#include <unistd.h>
 
 void iterate_cursor(WT_CURSOR *cursor) {
     int ret;
@@ -48,5 +49,6 @@ int main() {
     cursor->remove(cursor);
     printf("Deleting is success?\n");
     iterate_cursor(cursor);
+    sleep(60);
     conn->close(conn, NULL);
 }

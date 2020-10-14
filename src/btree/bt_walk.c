@@ -572,6 +572,7 @@ __wt_tree_walk(WT_SESSION_IMPL *session, WT_REF **refp, uint32_t flags)
  *     Move to the next/previous page in the tree, tracking how many references were visited to get
  *     there.
  */
+// ret = __wt_tree_walk_count(session, &ref, &refs_walked, walk_flags)) { // TODO: __wt_tree_walk_count
 int
 __wt_tree_walk_count(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp, uint32_t flags)
 {

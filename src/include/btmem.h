@@ -695,6 +695,7 @@ struct __wt_page {
  * The page's read generation acts as an LRU value for each page in the
  * tree; it is used by the eviction server thread to select pages to be
  * discarded from the in-memory tree.
+ * read_gen是page的LRU值。这个值用于eviciton server线程选择要丢弃的页面
  *
  * The read generation is a 64-bit value, if incremented frequently, a
  * 32-bit value could overflow.

@@ -13,6 +13,7 @@
 /*
  * __thread_run --
  *     General wrapper for any thread.
+ * 所有线程的入口函数
  */
 static WT_THREAD_RET
 __thread_run(void *arg)
@@ -29,6 +30,7 @@ __thread_run(void *arg)
         if (!F_ISSET(thread, WT_THREAD_RUN))
             break;
         if (!F_ISSET(thread, WT_THREAD_ACTIVE)) // 没有激活则等待条件变量
+            // 即使没有被主动唤醒，等待一段时间也会自己主动唤醒
             __wt_cond_wait(
               session, thread->pause_cond, WT_THREAD_PAUSE * WT_MILLION, thread->chk_func);
         WT_ERR(thread->run_func(session, thread));

@@ -25,6 +25,7 @@ static int __evict_walk_tree(WT_SESSION_IMPL *, WT_EVICT_QUEUE *, u_int, u_int *
  * __evict_lock_handle_list --
  *     Try to get the handle list lock, with yield and sleep back off. Keep timing statistics
  *     overall.
+ * 尝试获得句柄列表锁，关闭yield和sleep。保持总体时间统计
  */
 static int
 __evict_lock_handle_list(WT_SESSION_IMPL *session)
@@ -196,6 +197,7 @@ __wt_evict_list_clear_page(WT_SESSION_IMPL *session, WT_REF *ref)
  * __evict_queue_empty --
  *     Is the queue empty? Note that the eviction server is pessimistic and treats a half full queue
  *     as empty.
+ *  什么是悲观的？将半满的队列视为空队列。TODO: 判断队列为空的逻辑没有明白
  */
 static inline bool
 __evict_queue_empty(WT_EVICT_QUEUE *queue, bool server_check)
@@ -210,7 +212,7 @@ __evict_queue_empty(WT_EVICT_QUEUE *queue, bool server_check)
     if (server_check && candidates > 1)
         candidates /= 2;
     used = (uint32_t)(queue->evict_current - queue->evict_queue);
-    return (used >= candidates);
+    return (used >= candidates); // 当前队列中有不是候选者的页，此时队列也被视为empty?
 }
 
 /*
@@ -265,8 +267,7 @@ __wt_evict_thread_chk(WT_SESSION_IMPL *session)
  * __wt_evict_thread_run --
  *     Entry function for an eviction thread. This is called repeatedly from the thread group code
  *     so it does not need to loop itself.
- *     TODO: 这个函数会接连不断地被thread group调用。那么触发逻辑是什么呢？考虑__wt_thread_group_stop_one和__wt_thread_group_start_one函数
- *  reading here. 2020-9-28-19:23
+ *     这个函数会接连不断地被thread group调用，指的是__thread_run函数体里会持续不断地调用run_func，即该函数。
  */
 int
 __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
@@ -278,8 +279,9 @@ __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
 
     conn = S2C(session);
     cache = conn->cache;
-
+    MY_PRINTF("evict thread run, tid=%lld\n", thread->tid.id);
     if (conn->evict_server_running && __wt_spin_trylock(session, &cache->evict_pass_lock) == 0) {
+        MY_PRINTF("evict server thread run, tid=%lld\n", thread->tid.id);
         // 同一时刻，只能有一个eviction thread变成server thread，负责扫描btree，并填充evict_queue。参见：
         // https://developer.aliyun.com/article/69040
         /*
@@ -362,6 +364,7 @@ err:
 /*
  * __evict_server --
  *     Thread to evict pages from the cache.
+ * 这个函数是evict server的核心函数
  */
 static int
 __evict_server(WT_SESSION_IMPL *session, bool *did_work)
@@ -383,7 +386,7 @@ __evict_server(WT_SESSION_IMPL *session, bool *did_work)
     if (!F_ISSET(conn, WT_CONN_EVICTION_RUN) || cache->pass_intr != 0)
         return (0);
 
-    if (!__wt_cache_stuck(session)) {
+    if (!__wt_cache_stuck(session)) { // TODO: 没有stuck的逻辑是什么？
         /*
          * Try to get the handle list lock: if we give up, that indicates a session is waiting for
          * us to clear walks. Do that as part of a normal pass (without the handle list lock) to
@@ -406,7 +409,8 @@ __evict_server(WT_SESSION_IMPL *session, bool *did_work)
         cache->last_eviction_progress = 0;
         return (0);
     }
-
+    
+    // 如果cache stuck了，无非是做一些日志输出和变量记录。
     /* Track if work was done. */
     *did_work = cache->eviction_progress != cache->last_eviction_progress;
     cache->last_eviction_progress = cache->eviction_progress;
@@ -539,6 +543,8 @@ __wt_evict_destroy(WT_SESSION_IMPL *session)
 /*
  * __evict_update_work --
  *     Configure eviction work state.
+ * 这个函数用来指定应该执行哪类eviciton
+ * 如果不需要evicit，返回false
  */
 static bool
 __evict_update_work(WT_SESSION_IMPL *session)
@@ -583,15 +589,15 @@ __evict_update_work(WT_SESSION_IMPL *session)
      */
     bytes_max = conn->cache_size + 1;
     bytes_inuse = __wt_cache_bytes_inuse(cache);
-    if (__wt_eviction_clean_needed(session, NULL))
+    if (__wt_eviction_clean_needed(session, NULL)) // 当cache使用率超过eviction_trigger时
         LF_SET(WT_CACHE_EVICT_CLEAN | WT_CACHE_EVICT_CLEAN_HARD);
-    else if (bytes_inuse > (target * bytes_max) / 100)
+    else if (bytes_inuse > (target * bytes_max) / 100) // 当cache使用的size，比targe大时
         LF_SET(WT_CACHE_EVICT_CLEAN);
 
     dirty_inuse = __wt_cache_dirty_leaf_inuse(cache);
-    if (__wt_eviction_dirty_needed(session, NULL))
+    if (__wt_eviction_dirty_needed(session, NULL)) // 当脏页size超过cache_size*dirty_trigger时
         LF_SET(WT_CACHE_EVICT_DIRTY | WT_CACHE_EVICT_DIRTY_HARD);
-    else if (dirty_inuse > (uint64_t)(dirty_target * bytes_max) / 100)
+    else if (dirty_inuse > (uint64_t)(dirty_target * bytes_max) / 100) // 当脏页size，比ditry_target大时
         LF_SET(WT_CACHE_EVICT_DIRTY);
 
     /*
@@ -604,12 +610,14 @@ __evict_update_work(WT_SESSION_IMPL *session)
     /*
      * Scrub dirty pages and keep them in cache if we are less than half way to the clean or dirty
      * trigger.
+     * 如果距离清理或清理触发器的距离还不到一半，则删除脏页面并将其保存在缓存中。
+     * TODO: 这里所谓的scrub脏页是什么意思
      */
     if (bytes_inuse < (uint64_t)((target + trigger) * bytes_max) / 200) {
         if (dirty_inuse < (uint64_t)((dirty_target + dirty_trigger) * bytes_max) / 200)
             LF_SET(WT_CACHE_EVICT_SCRUB);
     } else
-        LF_SET(WT_CACHE_EVICT_NOKEEP);
+        LF_SET(WT_CACHE_EVICT_NOKEEP); // TODO: 这个标识又用来干嘛用的？
 
     /*
      * Try lookaside evict when:
@@ -643,6 +651,7 @@ __evict_update_work(WT_SESSION_IMPL *session)
 /*
  * __evict_pass --
  *     Evict pages from memory.
+ * eviction server的核心函数
  * TODO: reading here 2020-9-28-20:00
  */
 static int
@@ -665,7 +674,7 @@ __evict_pass(WT_SESSION_IMPL *session)
     prev_oldest_id = txn_global->oldest_id;
 
     /* Evict pages from the cache. */
-    for (loop = 0; cache->pass_intr == 0; loop++) {
+    for (loop = 0; cache->pass_intr == 0; loop++) { // 没有被打断则一直循环
         time_now = __wt_clock(session);
         if (loop == 0)
             time_prev = time_now;
@@ -696,7 +705,7 @@ __evict_pass(WT_SESSION_IMPL *session)
         __wt_verbose(session, WT_VERB_EVICTSERVER,
           "Eviction pass with: Max: %" PRIu64 " In use: %" PRIu64 " Dirty: %" PRIu64,
           conn->cache_size, cache->bytes_inmem, cache->bytes_dirty_intl + cache->bytes_dirty_leaf);
-
+        // reading here. 2020-10-12-15:54
         if (F_ISSET(cache, WT_CACHE_EVICT_ALL))
             WT_RET(__evict_lru_walk(session));
 
@@ -946,6 +955,10 @@ __wt_evict_file_exclusive_off(WT_SESSION_IMPL *session)
  *     keep increasing the number of workers. If not, we are past the infliction point on the
  *     eviction throughput curve. In that case, we will set the number of workers to the best
  *     observed so far and settle into a stable state.
+ * 找到合适数量的eviction worker的数量。逐步增加工人的数量，按上述设置指示分批增加工人数量。存储到目前为止为我们提供最佳吞吐量的工人数量和我们尝试过的数据点数量。
+ * 每隔一段时间，当我们有最小数量的数据点时，我们检查当前工人数量所达到的驱逐吞吐量是否为我们所见过的最好的。如果是这样的话，我们将继续增加工人的数量。
+ * 如果没有，我们就超过了驱逐吞吐量曲线上的施加点。在这种情况下，我们将把工人的数量设置为到目前为止观察到的最好的，并使其稳定下来。
+ * 这个函数用于寻找eviciton worker的数量，与主流程无关，暂时跳过
  */
 static void
 __evict_tune_workers(WT_SESSION_IMPL *session)
@@ -1124,6 +1137,8 @@ __evict_lru_pages(WT_SESSION_IMPL *session, bool is_server)
 /*
  * __evict_lru_walk --
  *     Add pages to the LRU queue to be evicted from cache.
+ * TODO: reading here 2020-9-29-18:25
+ * 添加页到lru队列中
  */
 static int
 __evict_lru_walk(WT_SESSION_IMPL *session)
@@ -1142,6 +1157,7 @@ __evict_lru_walk(WT_SESSION_IMPL *session)
     if (cache->evict_empty_score > 0)
         --cache->evict_empty_score;
 
+    /* 如果上一次fill_queue为0，则这一次的fill_queue为1，如果为1，这这一次的fill_queue为0 */
     /* Fill the next queue (that isn't the urgent queue). */
     queue = cache->evict_fill_queue;
     other_queue = cache->evict_queues + (1 - (queue - cache->evict_queues));
@@ -1153,6 +1169,7 @@ __evict_lru_walk(WT_SESSION_IMPL *session)
 
     /*
      * If both queues are full and haven't been empty on recent refills, we're done.
+     * 如果两个队列都满，而且最近一次扫描，队列也不为空。那就不往队列里写东西了。
      */
     if (__evict_queue_full(queue) && cache->evict_empty_score < WT_EVICT_SCORE_CUTOFF)
         goto err;
@@ -1371,6 +1388,7 @@ __evict_walk(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue)
     dhandle_locked = incr = false;
     retries = 0;
 
+    // 下面这一坨逻辑用来决定这次walk，要walk多少页
     /*
      * Set the starting slot in the queue and the maximum pages added per walk.
      */
@@ -1400,12 +1418,14 @@ retry:
         if (cache->pass_intr != 0)
             WT_ERR(EBUSY);
 
+        // dhandle这一坨主要是用来找到要evcit哪个b树
         /*
          * Lock the dhandle list to find the next handle and bump its reference count to keep it
          * alive while we sweep.
+         * 锁定dhandle列表以找到下一个句柄，并增加它的引用计数以使它在我们扫描时保持活动状态。
          */
         if (!dhandle_locked) {
-            WT_ERR(__evict_lock_handle_list(session));
+            WT_ERR(__evict_lock_handle_list(session)); // TODO: reading here 2020-9-29-20:46
             dhandle_locked = true;
         }
 
@@ -1448,6 +1468,7 @@ retry:
             continue;
 
         /*
+         * 如果cache不那么紧张，并且当前btree的不被eviciton优先级比较高，则跳过这个btree
          * Skip files that are configured to stick in cache until we become aggressive.
          */
         if (btree->evict_priority != 0 && !__wt_cache_aggressive(session))
@@ -1455,7 +1476,7 @@ retry:
 
         /*
          * Skip files if we have too many active walks.
-         *
+         * TODO: 没看明白
          * This used to be limited by the configured maximum number of hazard pointers per session.
          * Even though that ceiling has been removed, we need to test eviction with huge numbers of
          * active trees before allowing larger numbers of hazard pointers in the walk session.
@@ -1465,6 +1486,7 @@ retry:
 
         /*
          * If we are filling the queue, skip files that haven't been useful in the past.
+         * TODO: 没有看明白
          */
         if (btree->evict_walk_period != 0 && btree->evict_walk_skips++ < btree->evict_walk_period)
             continue;
@@ -1475,6 +1497,7 @@ retry:
         __wt_readunlock(session, &conn->dhandle_lock);
         dhandle_locked = false;
 
+        // TODO: reading here 2020-9-29-21:36
         /*
          * Re-check the "no eviction" flag, used to enforce exclusive access when a handle is being
          * closed.
@@ -1513,7 +1536,7 @@ retry:
      */
     if (slot < max_entries &&
       (retries < 2 ||
-          (retries < WT_RETRY_MAX && (slot == queue->evict_entries || slot > start_slot)))) {
+          (retries < WT_RETRY_MAX && (slot == queue->evict_entries || slot > start_slot)))) { // TODO: 这里的判断逻辑没有看明白
         start_slot = slot;
         ++retries;
         goto retry;
@@ -1578,6 +1601,7 @@ __evict_push_candidate(
 /*
  * __evict_walk_target --
  *     Calculate how many pages to queue for a given tree.
+ * 一棵树可以被evict多少个页呢
  */
 static uint32_t
 __evict_walk_target(WT_SESSION_IMPL *session)
@@ -1594,10 +1618,12 @@ __evict_walk_target(WT_SESSION_IMPL *session)
  */
 #define MIN_PAGES_PER_TREE 10
 
+    // 下面这一坨总体思想应该是：(cur tree used / all cache size)*evict_slots
     /*
      * The target number of pages for this tree is proportional to the space it is taking up in
      * cache. Round to the nearest number of slots so we assign all of the slots to a tree filling
      * 99+% of the cache (and only have to walk it once).
+     * 该树的目标页数与它在缓存中占用的空间成比例。四舍五入到最接近的槽数，所以我们将所有的槽分配给一个树来填充99%以上的缓存(并且只需要遍历它一次)。
      */
     if (F_ISSET(cache, WT_CACHE_EVICT_CLEAN)) {
         btree_inuse = __wt_btree_bytes_evictable(session);
@@ -1642,9 +1668,16 @@ __evict_walk_target(WT_SESSION_IMPL *session)
     return (target_pages);
 }
 
+// TODO: reading here. 2020-9-30-14:18
 /*
  * __evict_walk_tree --
  *     Get a few page eviction candidates from a single underlying file.
+ * TODO:
+ * __wt_tree_walk_count
+ * __wt_page_evict_urgent
+ * __wt_page_can_evict
+ * __evict_push_candidate
+ * __wt_page_release
  */
 static int
 __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_entries, u_int *slotp)
@@ -1671,7 +1704,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
 
     /*
      * Figure out how many slots to fill from this tree. Note that some care is taken in the
-     * calculation to avoid overflow.
+     * calculation to avoid overflow. 下面这一坨代码主要用来获取target_pages，里面的几个参数没有搞明白，以后再弄。
      */
     start = queue->evict_queue + *slotp;
     remaining_slots = max_entries - *slotp;
@@ -1693,6 +1726,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
      * round. The range of values here start at MIN_PAGES_PER_TREE as this is the smallest number of
      * pages we can target, unless there are fewer slots available. The aim is to cover the likely
      * ranges of target pages in as few statistics as possible to reduce the overall overhead.
+     * 其目的是用尽可能少的统计信息覆盖目标页的可能范围，以减少总体开销。
      */
     if (target_pages < MIN_PAGES_PER_TREE) {
         WT_STAT_CONN_INCR(session, cache_eviction_target_page_lt10);
@@ -1716,6 +1750,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
     /*
      * Examine at least a reasonable number of pages before deciding whether to give up. When we are
      * only looking for dirty pages, search the tree for longer.
+     * 在决定是否放弃之前，至少要检查合理数量的页面。当我们只寻找脏页面时，搜索树的时间要长一些。
      */
     min_pages = 10 * (uint64_t)target_pages;
     if (!F_ISSET(cache, WT_CACHE_EVICT_DIRTY) && F_ISSET(cache, WT_CACHE_EVICT_CLEAN))
@@ -1756,7 +1791,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
         if (btree->evict_ref == NULL) {
             /* Ensure internal pages indexes remain valid */
             WT_WITH_PAGE_INDEX(
-              session, ret = __wt_random_descent(session, &btree->evict_ref, read_flags));
+              session, ret = __wt_random_descent(session, &btree->evict_ref, read_flags)); // TODO: __wt_random_descent是什么暂时跳过
             WT_RET_NOTFOUND_OK(ret);
         }
         break;
@@ -1766,8 +1801,9 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
      * Get some more eviction candidate pages, starting at the last saved point. Clear the saved
      * point immediately, we assert when discarding pages we're not discarding an eviction point, so
      * this clear must be complete before the page is released.
+     * 从最后的保存点开始做evict
      */
-    ref = btree->evict_ref;
+    ref = btree->evict_ref; // 这里的evict_ref可能本身就是NULL
     btree->evict_ref = NULL;
 
     /*
@@ -1784,7 +1820,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
     for (evict = start, pages_already_queued = pages_queued = pages_seen = refs_walked = 0;
          evict < end && (ret == 0 || ret == WT_NOTFOUND);
          last_parent = ref == NULL ? NULL : ref->home,
-        ret = __wt_tree_walk_count(session, &ref, &refs_walked, walk_flags)) {
+        ret = __wt_tree_walk_count(session, &ref, &refs_walked, walk_flags)) { // TODO: __wt_tree_walk_count
         /*
          * Check whether we're finding a good ratio of candidates vs pages seen. Some workloads
          * create "deserts" in trees where no good eviction candidates can be found. Abandon the
@@ -1793,7 +1829,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
         give_up = !__wt_cache_aggressive(session) && !F_ISSET(btree, WT_BTREE_LOOKASIDE) &&
           pages_seen > min_pages &&
           (pages_queued == 0 || (pages_seen / pages_queued) > (min_pages / target_pages));
-        if (give_up) {
+        if (give_up) { // 我们做完了，所以退出循环吧
             /*
              * Try a different walk start point next time if a walk gave up.
              */
@@ -1830,7 +1866,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
             WT_STAT_CONN_INCR(session, cache_eviction_walks_ended);
             WT_STAT_DATA_INCR(session, cache_eviction_walks_ended);
 
-            if (++restarts == 2) {
+            if (++restarts == 2) { // 重试了两次，ref还是NULL，退出
                 WT_STAT_CONN_INCR(session, cache_eviction_walks_stopped);
                 WT_STAT_DATA_INCR(session, cache_eviction_walks_stopped);
                 break;
@@ -1855,6 +1891,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
 
         /*
          * Use the EVICT_LRU flag to avoid putting pages onto the list multiple times.
+         * 如果页面已经入队，continue
          */
         if (F_ISSET_ATOMIC(page, WT_PAGE_EVICT_LRU)) {
             pages_already_queued++;
@@ -1863,6 +1900,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
             continue;
         }
 
+        /* 如果脏页已经在做checkpoint，continue */
         /* Don't queue dirty pages in trees during checkpoints. */
         if (modified && WT_BTREE_SYNCING(btree))
             continue;
@@ -1873,13 +1911,14 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
          * doesn't somehow leave a page without a read generation.
          */
         if (page->read_gen == WT_READGEN_NOTSET)
-            __wt_cache_read_gen_new(session, page);
+            __wt_cache_read_gen_new(session, page); // 没有设置read gen，则设置
 
-        /* Pages being forcibly evicted go on the urgent queue. */
+        // reading here. 2020-10-13-19:32
+        /* Pages being forcibly evicted go on the urgent queue. 被强制驱逐的页面进入紧急队列。*/
         if (modified &&
           (page->read_gen == WT_READGEN_OLDEST || page->memory_footprint >= btree->splitmempage)) {
             WT_STAT_CONN_INCR(session, cache_eviction_pages_queued_oldest);
-            if (__wt_page_evict_urgent(session, ref))
+            if (__wt_page_evict_urgent(session, ref)) // TODO: __wt_page_evict_urgent
                 urgent_queued = true;
             continue;
         }
@@ -1899,6 +1938,9 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
          * preventing a clean leaf page from being evicted is it contains historical data, mark it
          * dirty so we can do lookaside eviction. We also mark the tree dirty to avoid an assertion
          * that we don't discard dirty pages from a clean tree.
+         * 如果应用程序线程在清除干净的页面时被阻塞，而防止清除干净的叶子页面被清除的唯一原因是它包含历史数据，那么将它标记为dirty，
+         * 这样我们就可以执行lookaside清除。我们还将树标记为“脏”，以避免断言没有从干净的树中丢弃脏页面。
+         * TODO: 这块代码没有看懂
          */
         if (F_ISSET(cache, WT_CACHE_EVICT_CLEAN_HARD) &&
           !F_ISSET(conn, WT_CONN_EVICTION_NO_LOOKASIDE) && !WT_PAGE_IS_INTERNAL(page) &&
@@ -1924,6 +1966,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
          * Also skip internal page unless we get aggressive, the tree is idle (indicated by the tree
          * being skipped for walks), or we are in eviction debug mode. The goal here is that if
          * trees become completely idle, we eventually push them out of cache completely.
+         * TODO: 为什么树是空闲的就不跳过内部页
          */
         if (!F_ISSET(cache, WT_CACHE_EVICT_DEBUG_MODE) && WT_PAGE_IS_INTERNAL(page)) {
             if (page == last_parent)
@@ -1941,6 +1984,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
          * it's unlikely we can make progress. Similarly, if the most recent update on the page is
          * not yet globally visible, eviction will fail. This heuristic avoids repeated attempts to
          * evict the same page.
+         * TODO: 这块代码与事务相关，暂时跳过
          */
         if (!__wt_page_evict_retry(session, page) ||
           (modified && !__txn_visible_all_id(session, page->modify->update_txn)))
@@ -1948,11 +1992,12 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
 
 fast:
         /* If the page can't be evicted, give up. */
-        if (!__wt_page_can_evict(session, ref, NULL))
+        if (!__wt_page_can_evict(session, ref, NULL)) // TODO: __wt_page_can_evict
             continue;
 
         WT_ASSERT(session, evict->ref == NULL);
-        if (!__evict_push_candidate(session, queue, evict, ref))
+        // 这个函数应该是将ref推到evict queue中
+        if (!__evict_push_candidate(session, queue, evict, ref)) // evict指向queue的当前slot // TODO: __evict_push_candidate
             continue;
         ++evict;
         ++pages_queued;
@@ -2001,7 +2046,7 @@ fast:
           ref->page->memory_footprint >= btree->splitmempage) {
             if (restarts == 0)
                 WT_STAT_CONN_INCR(session, cache_eviction_walks_abandoned);
-            WT_RET(__wt_page_release(cache->walk_session, ref, walk_flags));
+            WT_RET(__wt_page_release(cache->walk_session, ref, walk_flags)); // TODO: 这里的release表示？
             ref = NULL;
         } else
             while (ref != NULL &&

@@ -80,6 +80,7 @@ __wt_cache_read_gen_new(WT_SESSION_IMPL *session, WT_PAGE *page)
 /*
  * __wt_cache_stuck --
  *     Indicate if the cache is stuck (i.e., not making progress).
+ * 表示cache是否被卡住
  */
 static inline bool
 __wt_cache_stuck(WT_SESSION_IMPL *session)

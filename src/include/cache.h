@@ -18,7 +18,7 @@
  */
 #define WT_EVICT_MAX_TREES 1000 /* Maximum walk points */
 #define WT_EVICT_WALK_BASE 300  /* Pages tracked across file visits */
-#define WT_EVICT_WALK_INCR 100  /* Pages added each walk */
+#define WT_EVICT_WALK_INCR 100  /* Pages added each walk */ // 每次最多扫描100个page
 
 /*
  * WT_EVICT_ENTRY --
@@ -36,14 +36,16 @@ struct __wt_evict_entry {
 /*
  * WT_EVICT_QUEUE --
  *	Encapsulation of an eviction candidate queue.
+ * 队列的数据是怎么组织的, 猜测可能是个环状队列
+ * TMD，这个队列结构连个解释都不给，wtf
  */
 struct __wt_evict_queue {
     WT_SPINLOCK evict_lock;        /* Eviction LRU queue */
-    WT_EVICT_ENTRY *evict_queue;   /* LRU pages being tracked */
-    WT_EVICT_ENTRY *evict_current; /* LRU current page to be evicted */
-    uint32_t evict_candidates;     /* LRU list pages to evict */
-    uint32_t evict_entries;        /* LRU entries in the queue */
-    volatile uint32_t evict_max;   /* LRU maximum eviction slot used */
+    WT_EVICT_ENTRY *evict_queue;   /* LRU pages being tracked */ // 队列头
+    WT_EVICT_ENTRY *evict_current; /* LRU current page to be evicted */ // 
+    uint32_t evict_candidates;     /* LRU list pages to evict */ // 目测是evict候选者的个数，因为并不是队列中所有的页都是候选者
+    uint32_t evict_entries;        /* LRU entries in the queue */ // 队列中的LRU条目。应该是队列尾，表示要入队的entry的位置
+    volatile uint32_t evict_max;   /* LRU maximum eviction slot used */ // TODO: ？
 };
 
 /* Cache operations. */
@@ -85,7 +87,7 @@ struct __wt_cache {
 
     uint64_t bytes_lookaside; /* Lookaside bytes inmem */
 
-    volatile uint64_t eviction_progress; /* Eviction progress count */
+    volatile uint64_t eviction_progress; /* Eviction progress count */ /* TODO: Eviction的计数器？用于标识eviction进度 */
     uint64_t last_eviction_progress;     /* Tracked eviction progress */
 
     uint64_t app_waits;  /* User threads waited for cache */
@@ -147,7 +149,7 @@ struct __wt_cache {
      */
     WT_SPINLOCK evict_pass_lock;   /* Eviction pass lock */
     WT_SESSION_IMPL *walk_session; /* Eviction pass session */
-    WT_DATA_HANDLE *walk_tree;     /* LRU walk current tree */
+    WT_DATA_HANDLE *walk_tree;     /* LRU walk current tree */ // 记录了当前遍历的树
 
     WT_SPINLOCK evict_queue_lock; /* Eviction current queue lock */
     WT_EVICT_QUEUE evict_queues[WT_EVICT_QUEUE_MAX];
@@ -160,7 +162,7 @@ struct __wt_cache {
                                             before it switches. */
     WT_EVICT_QUEUE *evict_other_queue;   /* LRU queue not in use */
     WT_EVICT_QUEUE *evict_urgent_queue;  /* LRU urgent queue */
-    uint32_t evict_slots;                /* LRU list eviction slots */
+    uint32_t evict_slots;                /* LRU list eviction slots */ // 每个lru队列的最大长度
 
 #define WT_EVICT_SCORE_BUMP 10
 #define WT_EVICT_SCORE_CUTOFF 10
@@ -169,13 +171,15 @@ struct __wt_cache {
      * Score of how aggressive eviction should be about selecting eviction candidates. If eviction
      * is struggling to make progress, this score rises (up to a maximum of 100), at which point the
      * cache is "stuck" and transactions will be rolled back.
+     * 在选择eviction候选对象时，用于表示eviction迫切程度的分数。如果该值为WT_EVICT_SCORE_MAX，表示cache被卡住了，事务将会被回滚
      */
     uint32_t evict_aggressive_score;
 
     /*
      * Score of how often LRU queues are empty on refill. This score varies
      * between 0 (if the queue hasn't been empty for a long time) and 100
-     * (if the queue has been empty the last 10 times we filled up.
+     * (if the queue has been empty the last 10 times we filled up. 如果队列已经空了10次，我们就填满了。
+     * LRU队列为空的分数。每次为空+10,最多加到100
      */
     uint32_t evict_empty_score;
 
@@ -243,6 +247,7 @@ struct __wt_cache {
                                    /* AUTOMATIC FLAG VALUE GENERATION STOP */
     uint32_t pool_flags;           /* Cache pool flags */
 
+// 这些宏是eviciton的flag，标识eviction server或者worker应该如何eviction
 /* AUTOMATIC FLAG VALUE GENERATION START */
 #define WT_CACHE_EVICT_CLEAN 0x001u      /* Evict clean pages */
 #define WT_CACHE_EVICT_CLEAN_HARD 0x002u /* Clean % blocking app threads */

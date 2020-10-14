@@ -39,6 +39,7 @@ __wt_rdtsc(void)
  *     Check and prevent time running backward. If we detect that it has, we set the time structure
  *     to the previous values, making time stand still until we see a time in the future of the
  *     highest value seen so far.
+ * tsp一定要比session的last epoch晚
  */
 static inline void
 __time_check_monotonic(WT_SESSION_IMPL *session, struct timespec *tsp)
@@ -74,8 +75,8 @@ __wt_epoch(WT_SESSION_IMPL *session, struct timespec *tsp)
      * simultaneously reading the time from seeing random time or time moving backwards (assigning
      * the time structure to the returned memory location implies multicycle writes to memory).
      */
-    __wt_epoch_raw(session, &tmp);
-    __time_check_monotonic(session, &tmp);
+    __wt_epoch_raw(session, &tmp); // epoch_raw获取当前系统时间
+    __time_check_monotonic(session, &tmp); // 获取的时间tmp，一定要比session的last epoch晚
     *tsp = tmp;
 }
 
