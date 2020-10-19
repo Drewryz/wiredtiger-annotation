@@ -315,7 +315,7 @@ __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
             __wt_verbose(session, WT_VERB_EVICTSERVER, "%s", "waking");
         }
     } else
-        WT_ERR(__evict_lru_pages(session, false));
+        WT_ERR(__evict_lru_pages(session, false)); // worker的入口函数
 
     if (0) {
 err:
@@ -1138,7 +1138,7 @@ __evict_lru_pages(WT_SESSION_IMPL *session, bool is_server)
  * __evict_lru_walk --
  *     Add pages to the LRU queue to be evicted from cache.
  * TODO: reading here 2020-9-29-18:25
- * 添加页到lru队列中
+ * 添加页到lru队列中, 排序, signal
  */
 static int
 __evict_lru_walk(WT_SESSION_IMPL *session)
@@ -1192,7 +1192,7 @@ __evict_lru_walk(WT_SESSION_IMPL *session)
      * If the walk is interrupted, we still need to sort the queue: the next walk assumes there are
      * no entries beyond WT_EVICT_WALK_BASE.
      */
-    if ((ret = __evict_walk(cache->walk_session, queue)) == EBUSY)
+    if ((ret = __evict_walk(cache->walk_session, queue)) == EBUSY) // TODO: reading here 2020-10-15-11:49 接下来整体过下这个函数
         ret = 0;
     WT_ERR_NOTFOUND_OK(ret);
 
@@ -2235,6 +2235,8 @@ __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_
 /*
  * __evict_page --
  *     Called by both eviction and application threads to evict a page.
+ * 拿到一个页面：__evict_get_ref
+ * 然后做evict：__wt_evict
  */
 static int
 __evict_page(WT_SESSION_IMPL *session, bool is_server)
@@ -2250,6 +2252,7 @@ __evict_page(WT_SESSION_IMPL *session, bool is_server)
 
     WT_TRACK_OP_INIT(session);
 
+    // TODO: reading here. 2020-10-19-17:05
     WT_RET_TRACK(__evict_get_ref(session, is_server, &btree, &ref, &previous_state));
     WT_ASSERT(session, ref->state == WT_REF_LOCKED);
 
@@ -2453,6 +2456,7 @@ __wt_page_evict_urgent(WT_SESSION_IMPL *session, WT_REF *ref)
         urgent_queue->evict_current = urgent_queue->evict_queue;
         urgent_queue->evict_candidates = 0;
     }
+    // TODO: queue的队列头+evict_candidates就是page入队的位置，那是不是queue的队列头+evict_candidates = evict_current
     evict = urgent_queue->evict_queue + urgent_queue->evict_candidates;
     if (evict < urgent_queue->evict_queue + cache->evict_slots &&
       __evict_push_candidate(session, urgent_queue, evict, ref)) {

@@ -42,10 +42,11 @@ struct __wt_evict_entry {
 struct __wt_evict_queue {
     WT_SPINLOCK evict_lock;        /* Eviction LRU queue */
     WT_EVICT_ENTRY *evict_queue;   /* LRU pages being tracked */ // 队列头
-    WT_EVICT_ENTRY *evict_current; /* LRU current page to be evicted */ // 
+    WT_EVICT_ENTRY *evict_current; /* LRU current page to be evicted */ // evict到的位置
+    // queue的队列头+evict_candidates就是page入队的位置
     uint32_t evict_candidates;     /* LRU list pages to evict */ // 目测是evict候选者的个数，因为并不是队列中所有的页都是候选者
     uint32_t evict_entries;        /* LRU entries in the queue */ // 队列中的LRU条目。应该是队列尾，表示要入队的entry的位置
-    volatile uint32_t evict_max;   /* LRU maximum eviction slot used */ // TODO: ？
+    volatile uint32_t evict_max;   /* LRU maximum eviction slot used */ // Keep track of the maximum slot we are using
 };
 
 /* Cache operations. */

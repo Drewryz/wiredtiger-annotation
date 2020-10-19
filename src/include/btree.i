@@ -1379,6 +1379,8 @@ __wt_page_can_evict(WT_SESSION_IMPL *session, WT_REF *ref, bool *inmem_splitp)
      * We can't split or evict multiblock row-store pages where the parent's key for the page is an
      * overflow item, because the split into the parent frees the backing blocks for any
      * no-longer-used overflow keys, which will corrupt the checkpoint's block management.
+     * 我们不能分割或驱逐多块行存储的页面，其中父页面的键是溢出项，因为分割到父页面会释放不再使用溢出键的支持块，这将破坏检查点的块管理。
+     * TODO: 没看明白
      */
     if (!__wt_btree_can_evict_dirty(session) && F_ISSET_ATOMIC(ref->home, WT_PAGE_OVERFLOW_KEYS)) {
         WT_STAT_CONN_INCR(session, cache_eviction_fail_parent_has_overflow_items);

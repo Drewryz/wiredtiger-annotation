@@ -375,7 +375,7 @@ __evict_page_dirty_update(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t evict_
                                 */
         if (mod->mod_multi_entries == 1) {
             WT_ASSERT(session, closing == false);
-            WT_RET(__wt_split_rewrite(session, ref, &mod->mod_multi[0]));
+            WT_RET(__wt_split_rewrite(session, ref, &mod->mod_multi[0]));   // TODO: reading here. 2020-10-19-18:21 好吧，我猜测split函数，应该会调用reconciliation
         } else
             WT_RET(__wt_split_multi(session, ref, closing));
         break;
@@ -522,6 +522,7 @@ __evict_child_check(WT_SESSION_IMPL *session, WT_REF *parent)
  * __evict_review --
  *     Get exclusive access to the page and review the page and its subtree for conditions that
  *     would block its eviction.
+ * 获得对该页的独占访问，并检查该页及其子树，以查看可能阻止其驱逐的条件。
  */
 static int
 __evict_review(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t evict_flags, bool *inmem_splitp)
