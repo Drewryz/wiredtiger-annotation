@@ -130,7 +130,7 @@ __wt_txn_release_snapshot(WT_SESSION_IMPL *session)
 
     txn_state->metadata_pinned = txn_state->pinned_id = WT_TXN_NONE;
     F_CLR(txn, WT_TXN_HAS_SNAPSHOT);
-
+    
     /* Clear a checkpoint's pinned ID. */
     if (WT_SESSION_IS_CHECKPOINT(session)) {
         txn_global->checkpoint_state.pinned_id = WT_TXN_NONE;
@@ -139,7 +139,7 @@ __wt_txn_release_snapshot(WT_SESSION_IMPL *session)
 
     __wt_txn_clear_read_timestamp(session);
 }
-// (yangzaorang) 过瘾呀，过瘾，昏昏沉沉，终于读到了获取快照这一块代码
+
 /*
  * __wt_txn_get_snapshot --
  *     Allocate a snapshot.
@@ -178,11 +178,12 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
      * changes the checkpoint has written to the metadata. We don't have to keep the checkpoint's
      * changes pinned so don't including it in the published pinned ID.
      */
-    if ((id = txn_global->checkpoint_state.id) != WT_TXN_NONE) { // TODO: (yangzaorang) 这里没有看明白...
+    if ((id = txn_global->checkpoint_state.id) != WT_TXN_NONE) {
         txn->snapshot[n++] = id;
         txn_state->metadata_pinned = id;
     }
 
+    // TODO: 没看明白
     /* For pure read-only workloads, avoid scanning. */
     if (prev_oldest_id == current_id) {
         txn_state->pinned_id = current_id;
@@ -193,7 +194,7 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
 
     /* Walk the array of concurrent transactions. */
     WT_ORDERED_READ(session_cnt, conn->session_cnt);
-    for (i = 0, s = txn_global->states; i < session_cnt; i++, s++) {
+    for (i = 0, s = txn_global->states; i < session_cnt; i++, s++) { // 遍历所有事务
         /*
          * Build our snapshot of any concurrent transaction IDs.
          *
@@ -207,6 +208,13 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
          *    can happen if the transaction is already finished. In
          *    this case, we ignore this transaction because it would
          *    not be visible to the current snapshot.
+         * 
+         *      -------------------------------------
+         *     |      对当前事务来说，活跃的事务区间      |
+         *      ------------------------------------- 
+         *     ^                                     ^
+         *    prev_oldest_id                       current_id
+         *   
          */
         while (s != txn_state && (id = s->id) != WT_TXN_NONE && WT_TXNID_LE(prev_oldest_id, id) &&
           WT_TXNID_LT(id, current_id)) {
@@ -333,9 +341,11 @@ __txn_oldest_scan(WT_SESSION_IMPL *session, uint64_t *oldest_idp, uint64_t *last
     *oldest_sessionp = oldest_session;
 }
 
+// TODO: reading here. 2020-10-22-16:41
 /*
  * __wt_txn_update_oldest --
  *     Sweep the running transactions to update the oldest ID required.
+ * 扫描正在运行的事务以更新所需的最旧ID。
  */
 int
 __wt_txn_update_oldest(WT_SESSION_IMPL *session, uint32_t flags)

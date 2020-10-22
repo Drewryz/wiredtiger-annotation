@@ -104,14 +104,15 @@ struct __wt_named_snapshot {
 
 struct __wt_txn_state {
     WT_CACHE_LINE_PAD_BEGIN
-    volatile uint64_t id;
-    volatile uint64_t pinned_id;
+    volatile uint64_t id; // 事务id
+    volatile uint64_t pinned_id; // TODO: 表示什么？
     volatile uint64_t metadata_pinned;
-    volatile bool is_allocating;
+    volatile bool is_allocating; // 是否正在初始化？
 
     WT_CACHE_LINE_PAD_END
 };
 
+// 全局事务管理器
 struct __wt_txn_global {
     volatile uint64_t current; /* Current transaction ID. */
 
@@ -120,6 +121,8 @@ struct __wt_txn_global {
 
     /*
      * The oldest transaction ID that is not yet visible to some transaction in the system.
+     * 对系统中的某些事务还不可见的最旧的事务ID。
+     * 每个事务启动时，都有一个不可见事务区间。这个id记录了所有事务的所有不可见区间最早的事务
      */
     volatile uint64_t oldest_id;
 
@@ -127,7 +130,8 @@ struct __wt_txn_global {
     wt_timestamp_t last_ckpt_timestamp;
     wt_timestamp_t meta_ckpt_timestamp;
     wt_timestamp_t oldest_timestamp;
-    wt_timestamp_t pinned_timestamp;
+    // 可能与wt时间戳新特性有关，如果把时间戳事务当做一个数轴的话，pinned timestamp表示，所有事务的timestamp都要比这个时间戳要晚
+    wt_timestamp_t pinned_timestamp; // 这个时间戳表示什么
     wt_timestamp_t recovery_timestamp;
     wt_timestamp_t stable_timestamp;
     bool has_durable_timestamp;
@@ -147,7 +151,7 @@ struct __wt_txn_global {
 
     /* List of transactions sorted by durable timestamp. */
     WT_RWLOCK durable_timestamp_rwlock;
-    TAILQ_HEAD(__wt_txn_dts_qh, __wt_txn) durable_timestamph;
+    TAILQ_HEAD(__wt_txn_dts_qh, __wt_txn) durable_timestamph; // reading here. 2020-10-21-15:50
     uint32_t durable_timestampq_len;
 
     /* List of transactions sorted by read timestamp. */
@@ -160,24 +164,26 @@ struct __wt_txn_global {
      * checkpointing are special. Checkpoints can run for a long time so we keep them out of regular
      * visibility checks. Eviction and checkpoint operations know when they need to be aware of
      * checkpoint transactions.
+     * 检查点可以运行很长一段时间，所以我们将它们排除在常规的可见性检查之外。驱逐和检查点操作知道何时需要知道检查点事务。
      *
      * We rely on the fact that (a) the only table a checkpoint updates is the metadata; and (b)
      * once checkpoint has finished reading a table, it won't revisit it.
      */
     volatile bool checkpoint_running;    /* Checkpoint running */
-    volatile uint32_t checkpoint_id;     /* Checkpoint's session ID */
+    volatile uint32_t checkpoint_id;     /* Checkpoint's session ID */ // 做checkpoint的时候也会启一个session，这个字段记录了做checkpoint的session id
     WT_TXN_STATE checkpoint_state;       /* Checkpoint's txn state */
-    wt_timestamp_t checkpoint_timestamp; /* Checkpoint's timestamp */
+    wt_timestamp_t checkpoint_timestamp; /* Checkpoint's timestamp */ // 什么时候做的checkpoint，记录时间
 
     volatile uint64_t debug_ops;       /* Debug mode op counter */
     uint64_t debug_rollback;           /* Debug mode rollback */
-    volatile uint64_t metadata_pinned; /* Oldest ID for metadata */
+    volatile uint64_t metadata_pinned; /* Oldest ID for metadata */ // TODO: ???
 
     /* Named snapshot state. */
     WT_RWLOCK nsnap_rwlock;
     volatile uint64_t nsnap_oldest_id;
     TAILQ_HEAD(__wt_nsnap_qh, __wt_named_snapshot) nsnaph;
 
+    // 记录了每个事务的状态
     WT_TXN_STATE *states; /* Per-session transaction states */
 };
 
@@ -192,6 +198,9 @@ typedef enum __wt_txn_isolation {
  *	A transactional operation.  Each transaction builds an in-memory array
  *	of these operations as it runs, then uses the array to either write log
  *	records during commit or undo the operations during rollback.
+ * 事务操作记录。用于：
+ * 1. 事务提交时，记录redo log
+ * 2. 事务回滚时，undo操作
  */
 struct __wt_txn_op {
     WT_BTREE *btree;
@@ -229,6 +238,7 @@ struct __wt_txn_op {
         struct {
             uint64_t start, stop;
         } truncate_col;
+        // 关于truncate, 参考wt文档里的WT_SESSION::truncate函数
         /* WT_TXN_OP_TRUNCATE_ROW */
         struct {
             WT_ITEM start, stop;
@@ -265,6 +275,8 @@ struct __wt_txn {
      *	everything else is visible unless it is in the snapshot.
      */
     uint64_t snap_min, snap_max;
+    // 可能是对当前事务来说，不可见事务列表。参考下面链接的snap_array
+    // https://blog.csdn.net/daaikuaichuan/article/details/97893552
     uint64_t *snapshot;
     uint32_t snapshot_count;
     uint32_t txn_logsync; /* Log sync configuration */
@@ -279,12 +291,14 @@ struct __wt_txn {
     /*
      * Durable timestamp copied into updates created by this transaction. It is used to decide
      * whether to consider this update to be persisted or not by stable checkpoint.
+     * TODO: 没看明白
      */
     wt_timestamp_t durable_timestamp;
 
     /*
      * Set to the first commit timestamp used in the transaction and fixed while the transaction is
      * on the public list of committed timestamps.
+     * TODO: 没看明白
      */
     wt_timestamp_t first_commit_timestamp;
 
@@ -311,8 +325,9 @@ struct __wt_txn {
     WT_ITEM *logrec;
 
     /* Requested notification when transactions are resolved. */
-    WT_TXN_NOTIFY *notify;
+    WT_TXN_NOTIFY *notify; // 应该是回调函数
 
+    // TODO: txn, checkpoint, redo log，三者之间什么关系？
     /* Checkpoint status. */
     WT_LSN ckpt_lsn;
     uint32_t ckpt_nsnapshot;
@@ -365,3 +380,4 @@ struct __wt_txn {
     /* AUTOMATIC FLAG VALUE GENERATION STOP */
     uint32_t flags;
 };
+// end reading here.2020-10-22-11:57

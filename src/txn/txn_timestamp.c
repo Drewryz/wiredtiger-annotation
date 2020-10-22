@@ -165,7 +165,7 @@ __wt_txn_get_pinned_timestamp(WT_SESSION_IMPL *session, wt_timestamp_t *tsp, uin
     /* Check for a running checkpoint */
     if (LF_ISSET(WT_TXN_TS_INCLUDE_CKPT) && txn_global->checkpoint_timestamp != WT_TS_NONE &&
       (tmp_ts == 0 || txn_global->checkpoint_timestamp < tmp_ts))
-        tmp_ts = txn_global->checkpoint_timestamp;
+        tmp_ts = txn_global->checkpoint_timestamp; // 如果存在checkpoint，则将checkpoint的时间戳赋值给pinned timestamp
     if (!txn_has_write_lock)
         __wt_readunlock(session, &txn_global->rwlock);
 
@@ -1241,6 +1241,7 @@ __wt_txn_clear_read_timestamp(WT_SESSION_IMPL *session)
     /*
      * Serialize clearing the flag with setting the queue state. The serialization has been here for
      * awhile, but nobody remembers if or why it's necessary.
+     * 通过设置队列状态来序列化清除标志。序列化已经存在一段时间了，但是没有人记得是否需要或者为什么需要。
      */
     flags = txn->flags;
     LF_CLR(WT_TXN_PUBLIC_TS_READ);
