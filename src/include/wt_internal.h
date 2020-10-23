@@ -18,7 +18,7 @@ extern "C" {
 // (yangzaorang)
 #include <stdio.h>
 
-#define __MY_PRINTF
+// #define __MY_PRINTF
 #ifdef __MY_PRINTF
 #define MY_PRINTF(format, ...) printf(format, ##__VA_ARGS__) // 为了防止空的可变参数，对于gcc来说，需要在__VA_ARGS__加##
 #else
