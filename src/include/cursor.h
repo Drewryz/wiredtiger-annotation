@@ -68,6 +68,7 @@ struct __wt_cursor_backup {
     uint8_t flags;
 };
 
+// 这个结构体指向了btree的一个page的记录
 struct __wt_cursor_btree {
     WT_CURSOR iface;
 

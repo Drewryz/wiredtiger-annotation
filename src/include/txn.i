@@ -703,6 +703,7 @@ __wt_txn_visible(WT_SESSION_IMPL *session, uint64_t id, wt_timestamp_t timestamp
     return (timestamp <= txn->read_timestamp);
 }
 
+// reading here. 2020-10-27-20:18 
 /*
  * __wt_txn_upd_visible_type --
  *     Visible type of given update for the current transaction.
@@ -763,7 +764,7 @@ __wt_txn_read(WT_SESSION_IMPL *session, WT_UPDATE *upd, WT_UPDATE **updp)
 {
     static WT_UPDATE tombstone = {.txnid = WT_TXN_NONE, .type = WT_UPDATE_TOMBSTONE};
     WT_VISIBLE_TYPE upd_visible;
-    uint8_t type;
+    uint8_t type; // 这个type表示更新类型
     bool skipped_birthmark;
 
     *updp = NULL;
@@ -777,11 +778,11 @@ __wt_txn_read(WT_SESSION_IMPL *session, WT_UPDATE *upd, WT_UPDATE **updp)
             upd_visible = __wt_txn_upd_visible_type(session, upd);
             if (upd_visible == WT_VISIBLE_TRUE)
                 break;
-            if (upd_visible == WT_VISIBLE_PREPARE)
+            if (upd_visible == WT_VISIBLE_PREPARE) // 这里为什么直接返回
                 return (WT_PREPARE_CONFLICT);
         }
         /* An invisible birthmark is equivalent to a tombstone. */
-        if (type == WT_UPDATE_BIRTHMARK)
+        if (type == WT_UPDATE_BIRTHMARK) // TODO: WT_UPDATE_BIRTHMARK这个更新类型表示啥。。。
             skipped_birthmark = true;
     }
 

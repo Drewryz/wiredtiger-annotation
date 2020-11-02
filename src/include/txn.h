@@ -317,12 +317,12 @@ struct __wt_txn {
     bool clear_read_q; /* Set if need to clear from the read queue */
 
     /* Array of modifications by this transaction. */
-    WT_TXN_OP *mod;
+    WT_TXN_OP *mod; // 操作数组, 用于事务回滚
     size_t mod_alloc;
     u_int mod_count;
 
     /* Scratch buffer for in-memory log records. */
-    WT_ITEM *logrec;
+    WT_ITEM *logrec; // redo log buffer
 
     /* Requested notification when transactions are resolved. */
     WT_TXN_NOTIFY *notify; // 应该是回调函数
