@@ -362,6 +362,8 @@ struct __wt_txn {
 #define WT_TXN_HAS_TS_READ 0x0000080u
 #define WT_TXN_IGNORE_PREPARE 0x0000100u
 #define WT_TXN_NAMED_SNAPSHOT 0x0000200u
+// 关于wt的prepare，参考:
+// http://source.wiredtiger.com/3.2.1/struct_w_t___s_e_s_s_i_o_n.html#a96b8a369610c8cbb08b8a7c504fd1008
 #define WT_TXN_PREPARE 0x0000400u
 #define WT_TXN_PUBLIC_TS_READ 0x0000800u
 #define WT_TXN_READONLY 0x0001000u

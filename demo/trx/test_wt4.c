@@ -66,6 +66,7 @@ int main() {
         break;
     }
 
+    // 如果事务T想要更新键k，那么从事务T开始到事务T提交这段时间内，不能有对k的提交更新，否则T会出现更新失败而回滚。
     cursor2->set_key(cursor2, "key");
     cursor2->set_value(cursor2, 2);
     int status = 0;

@@ -907,6 +907,7 @@ __txn_mod_compare(const void *a, const void *b)
     return (aopt->u.op_col.recno < bopt->u.op_col.recno);
 }
 
+// reading here. 2020-11-2-11:28
 /*
  * __wt_txn_commit --
  *     Commit the current transaction.
@@ -946,6 +947,7 @@ __wt_txn_commit(WT_SESSION_IMPL *session, const char *cfg[])
     if (!prepare)
         F_CLR(txn, WT_TXN_TS_ROUND_PREPARED);
 
+    // reading here, 如果没有设置时间戳，这个函数基本上什么都没有做, 暂时略过
     /* Set the commit and the durable timestamps. */
     WT_ERR(__wt_txn_set_timestamp(session, cfg));
 
@@ -981,7 +983,7 @@ __wt_txn_commit(WT_SESSION_IMPL *session, const char *cfg[])
     /*
      * The default sync setting is inherited from the connection, but can be overridden by an
      * explicit "sync" setting for this transaction.
-     */
+     */ // whether to sync log records when the transaction commits
     WT_ERR(__wt_config_gets_def(session, cfg, "sync", 0, &cval));
 
     /*
