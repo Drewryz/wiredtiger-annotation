@@ -2443,9 +2443,18 @@ __wt_log_force_write(WT_SESSION_IMPL *session, bool retry, bool *did_work)
     return (__wt_log_slot_switch(session, &myslot, retry, true, did_work));
 }
 
+
+// 从commit_transaction到__wt_log_write的调用栈
+// #0  __wt_log_write (session=0x7ffff7fb1280, record=0x6a4b90, lsnp=0x0, flags=24) at src/log/log.c:2456
+// #1  0x00007ffff7b67009 in __wt_txn_log_commit (session=0x7ffff7fb1280, cfg=0x7fffffffdd40) at src/txn/txn_log.c:325
+// #2  0x00007ffff7b5c526 in __wt_txn_commit (session=0x7ffff7fb1280, cfg=0x7fffffffdd40) at src/txn/txn.c:1049
+// #3  0x00007ffff7b3c6f8 in __session_commit_transaction (wt_session=0x7ffff7fb1280, config=0x0) at src/session/session_api.c:1654
+// #4  0x000000000040096b in main () at test_wt3.c:59
+
 /*
  * __wt_log_write --
  *     Write a record into the log, compressing as necessary.
+ * record is txn->logrec
  */
 int
 __wt_log_write(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, uint32_t flags)
@@ -2556,6 +2565,7 @@ err:
     return (ret);
 }
 
+// reading here. 2020-11-13-19:59
 /*
  * __log_write_internal --
  *     Write a record into the log.

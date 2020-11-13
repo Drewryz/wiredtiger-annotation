@@ -322,7 +322,7 @@ struct __wt_txn {
     u_int mod_count;
 
     /* Scratch buffer for in-memory log records. */
-    WT_ITEM *logrec; // redo log buffer
+    WT_ITEM *logrec; // redo log buffer, 这里存储的是WT_LOG_RECORD吗？!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     /* Requested notification when transactions are resolved. */
     WT_TXN_NOTIFY *notify; // 应该是回调函数

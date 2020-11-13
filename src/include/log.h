@@ -232,7 +232,7 @@ struct __wt_myslot {
 #define WT_LOG_END_HEADER log->allocsize
 
 struct __wt_log {
-    uint32_t allocsize;    /* Allocation alignment size */
+    uint32_t allocsize;    /* Allocation alignment size 分配调整size */ // TODO: 所以到底是什么
     uint32_t first_record; /* Offset of first record in file */
     wt_off_t log_written;  /* Amount of log written this period */
                            /*
@@ -287,8 +287,8 @@ struct __wt_log {
  * arrays.
  */
 #define WT_SLOT_POOL 128
-    WT_LOGSLOT *active_slot;            /* Active slot */
-    WT_LOGSLOT slot_pool[WT_SLOT_POOL]; /* Pool of all slots */
+    WT_LOGSLOT *active_slot;            /* Active slot */ // 准备就绪且可以作为合并logrec的slotbuffer对象
+    WT_LOGSLOT slot_pool[WT_SLOT_POOL]; /* Pool of all slots */ // 系统所有slot buffer对象数组，包括：正在合并的、准备合并和闲置的slot buffer。
     int32_t pool_index;                 /* Index into slot pool */
     size_t slot_buf_size;               /* Buffer size for slots */
 #ifdef HAVE_DIAGNOSTIC
@@ -303,6 +303,9 @@ struct __wt_log {
     uint32_t flags;
 };
 
+// WT引擎的操作日志对象（以下简称为logrec）对应的是提交的事务，事务的每个操作被记录成一个logop对象，一个logrec包含多个logop。
+// logrec是一个通过精密序列化事务操作动作和参数得到的一个二进制buffer，这个buffer的数据是通过事务和操作类型来确定其格式的。
+// WT_LOG_RECORD
 struct __wt_log_record {
     uint32_t len;      /* 00-03: Record length including hdr */
     uint32_t checksum; /* 04-07: Checksum of the record */
