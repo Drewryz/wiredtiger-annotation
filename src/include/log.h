@@ -17,9 +17,9 @@
 /* AUTOMATIC FLAG VALUE GENERATION START */
 #define WT_LOG_BACKGROUND 0x01u
 #define WT_LOG_DSYNC 0x02u
-#define WT_LOG_FLUSH 0x04u
-#define WT_LOG_FSYNC 0x08u
-#define WT_LOG_SYNC_ENABLED 0x10u
+#define WT_LOG_FLUSH 0x04u // TODO: 这个标识没有看明白
+#define WT_LOG_FSYNC 0x08u // transaction_sync=(method=fsync)
+#define WT_LOG_SYNC_ENABLED 0x10u // transaction_sync=(enabled=true)
 /* AUTOMATIC FLAG VALUE GENERATION STOP */
 
 #define WT_LOGOP_IGNORE 0x80000000
@@ -39,6 +39,12 @@ union __wt_lsn {
         uint32_t file;
 #endif
     } l;
+    /*
+     *  63                     0
+     *   ----------------------
+     *  |   file  |   offset   |
+     *   ----------------------
+     */
     uint64_t file_offset;
 };
 
@@ -96,13 +102,26 @@ union __wt_lsn {
 #define WT_LOG_SKIP_HEADER(data) ((const uint8_t *)(data) + offsetof(WT_LOG_RECORD, record))
 #define WT_LOG_REC_SIZE(size) ((size)-offsetof(WT_LOG_RECORD, record))
 
+// 我们分配缓冲区大小，但当我们越过缓冲区的最大大小的一半时触发slot切换。如果一个记录超过了缓冲区的最大值，那么我们触发一个slot切换，并写入未缓冲的记录。
+// 我们使用一个更大的缓冲区来提供溢出空间，以便在超过阈值时进行切换。
+/*
+ * WT_LOG_SLOT_BUF_SIZE是slot可以设置成的最大的buffer size
+ * log->slot_buf_size是运行时真正的slot buffer size 
+ * WT_LOG_SLOT_BUF_MAX是单个事务的log最大可以缓存在slot buffer中的size，超过需要unbuffered
+ * 假设log->slot_buf_size = WT_LOG_SLOT_BUF_SIZE，则有下面的结构图
+ *     31                         19                         18                     17                             0
+ *  -------------------------------------------------------------------------------------------------------------------
+ * |          | ...... |  WT_LOG_SLOT_UNBUFFERED   |  log->slot_buf_size   |   WT_LOG_SLOT_BUF_MAX   | ...... |        |
+ *  -------------------------------------------------------------------------------------------------------------------
+ * 
+ */
 /*
  * We allocate the buffer size, but trigger a slot switch when we cross the maximum size of half the
  * buffer. If a record is more than the buffer maximum then we trigger a slot switch and write that
  * record unbuffered. We use a larger buffer to provide overflow space so that we can switch once we
  * cross the threshold.
  */
-#define WT_LOG_SLOT_BUF_SIZE (256 * 1024) /* Must be power of 2 */
+#define WT_LOG_SLOT_BUF_SIZE (256 * 1024) /* Must be power of 2 */ // 2^8 * 2^10
 #define WT_LOG_SLOT_BUF_MAX ((uint32_t)log->slot_buf_size / 2)
 #define WT_LOG_SLOT_UNBUFFERED (WT_LOG_SLOT_BUF_SIZE << 1)
 
@@ -158,39 +177,51 @@ union __wt_lsn {
 /*
  * These macros manipulate the slot state and its component parts.
  */
+// 取state(64位)的最高的两位
 #define WT_LOG_SLOT_FLAGS(state) ((state)&WT_LOG_SLOT_MASK_ON)
 #define WT_LOG_SLOT_JOINED(state) (((state)&WT_LOG_SLOT_MASK_OFF) >> 32)
 #define WT_LOG_SLOT_JOINED_BUFFERED(state) \
     (WT_LOG_SLOT_JOINED(state) & (WT_LOG_SLOT_UNBUFFERED - 1))
 #define WT_LOG_SLOT_JOIN_REL(j, r, s) (((j) << 32) + (r) + (s))
-#define WT_LOG_SLOT_RELEASED(state) ((int64_t)(int32_t)(state))
+#define WT_LOG_SLOT_RELEASED(state) ((int64_t)(int32_t)(state)) // TODO: released what's meanming?
 #define WT_LOG_SLOT_RELEASED_BUFFERED(state) \
     ((int64_t)((int32_t)WT_LOG_SLOT_RELEASED(state) & (WT_LOG_SLOT_UNBUFFERED - 1)))
 
 /* Slot is in use */
+
 #define WT_LOG_SLOT_ACTIVE(state) (WT_LOG_SLOT_JOINED(state) != WT_LOG_SLOT_JOIN_MASK)
 /* Slot is in use, but closed to new joins */
+// TODO: 为什么用这么复杂的条件判断slot是否closed
 #define WT_LOG_SLOT_CLOSED(state)                                                              \
     (WT_LOG_SLOT_ACTIVE(state) && (FLD_LOG_SLOT_ISSET((uint64_t)(state), WT_LOG_SLOT_CLOSE) && \
                                     !FLD_LOG_SLOT_ISSET((uint64_t)(state), WT_LOG_SLOT_RESERVED)))
 /* Slot is in use, all data copied into buffer */
-#define WT_LOG_SLOT_INPROGRESS(state) (WT_LOG_SLOT_RELEASED(state) != WT_LOG_SLOT_JOINED(state))
+#define WT_LOG_SLOT_INPROGRESS(state) (WT_LOG_SLOT_RELEASED(state) != WT_LOG_SLOT_JOINED(state)) // slot released != slot joined 就标识slot in progress
 #define WT_LOG_SLOT_DONE(state) (WT_LOG_SLOT_CLOSED(state) && !WT_LOG_SLOT_INPROGRESS(state))
 /* Slot is in use, more threads may join this slot */
 #define WT_LOG_SLOT_OPEN(state)                                           \
     (WT_LOG_SLOT_ACTIVE(state) && !WT_LOG_SLOT_UNBUFFERED_ISSET(state) && \
       !FLD_LOG_SLOT_ISSET((uint64_t)(state), WT_LOG_SLOT_CLOSE) &&        \
-      WT_LOG_SLOT_JOINED(state) < WT_LOG_SLOT_BUF_MAX)
+      WT_LOG_SLOT_JOINED(state) < WT_LOG_SLOT_BUF_MAX) // joined的size小于slot buffer的一半
 
+/*
+ * __wt_logslot对应的实际日志文件一经确定，应该就不会再变动。
+ * 这里会带来一个问题，每个redo log的size可能会超过用户设定的大小。  
+ */
 struct __wt_logslot {
     WT_CACHE_LINE_PAD_BEGIN
-    volatile int64_t slot_state; /* Slot state */
-    int64_t slot_unbuffered;     /* Unbuffered data in this slot */
+    volatile int64_t slot_state; /* Slot state */ // TODO: 这个变量是如何按位组织数据的
+    int64_t slot_unbuffered;     /* Unbuffered data in this slot */ // 记录unbuffered日志的size
     int slot_error;              /* Error value */
+    // 表示这个slot，开始写入日志文件时的偏移。参见__wt_log_slot_activate函数
     wt_off_t slot_start_offset;  /* Starting file offset */
+    // 表示这个slot，最后写入日志文件的偏移
     wt_off_t slot_last_offset;   /* Last record offset */
+    // TODO: 
     WT_LSN slot_release_lsn;     /* Slot release LSN */
+    // 表示这个slot开始时在日志文件中的lsn，猜测slot_start_lsn.l.offset == slot_start_offset
     WT_LSN slot_start_lsn;       /* Slot starting LSN */
+    // 表示这个slot结束时在日志文件中的lsn
     WT_LSN slot_end_lsn;         /* Slot ending LSN */
     WT_FH *slot_fh;              /* File handle for this group */
     WT_ITEM slot_buf;            /* Buffer for grouped writes */
@@ -218,13 +249,14 @@ struct __wt_logslot {
 
 struct __wt_myslot {
     WT_LOGSLOT *slot;    /* Slot I'm using */
+    /* end_offset的唯一作用是用来判断记录的txn.record是否为unbuffered*/
     wt_off_t end_offset; /* My end offset in buffer */
-    wt_off_t offset;     /* Slot buffer offset */
+    wt_off_t offset;     /* Slot buffer offset */ // txn日志在slot中的起始offset
 
 /* AUTOMATIC FLAG VALUE GENERATION START */
-#define WT_MYSLOT_CLOSE 0x1u         /* This thread is closing the slot */
+#define WT_MYSLOT_CLOSE 0x1u         /* This thread is closing the slot */ // slot close后会置该标志位
 #define WT_MYSLOT_NEEDS_RELEASE 0x2u /* This thread is releasing the slot */
-#define WT_MYSLOT_UNBUFFERED 0x4u    /* Write directly */
+#define WT_MYSLOT_UNBUFFERED 0x4u    /* Write directly */ // 如果slot有unbuffered的log，会在join的时候置该标志位
                                      /* AUTOMATIC FLAG VALUE GENERATION STOP */
     uint32_t flags;
 };
@@ -232,7 +264,7 @@ struct __wt_myslot {
 #define WT_LOG_END_HEADER log->allocsize
 
 struct __wt_log {
-    uint32_t allocsize;    /* Allocation alignment size 分配调整size */ // TODO: 所以到底是什么
+    uint32_t allocsize;    /* Allocation alignment size 分配调整size */
     uint32_t first_record; /* Offset of first record in file */
     wt_off_t log_written;  /* Amount of log written this period */
                            /*
@@ -252,7 +284,7 @@ struct __wt_log {
     /*
      * System LSNs
      */
-    WT_LSN alloc_lsn;       /* Next LSN for allocation */
+    WT_LSN alloc_lsn;       /* Next LSN for allocation */ // 下一个要分配的LSN
     WT_LSN bg_sync_lsn;     /* Latest background sync LSN */
     WT_LSN ckpt_lsn;        /* Last checkpoint LSN */
     WT_LSN dirty_lsn;       /* LSN of last non-synced write */
@@ -290,13 +322,13 @@ struct __wt_log {
     WT_LOGSLOT *active_slot;            /* Active slot */ // 准备就绪且可以作为合并logrec的slotbuffer对象
     WT_LOGSLOT slot_pool[WT_SLOT_POOL]; /* Pool of all slots */ // 系统所有slot buffer对象数组，包括：正在合并的、准备合并和闲置的slot buffer。
     int32_t pool_index;                 /* Index into slot pool */
-    size_t slot_buf_size;               /* Buffer size for slots */
+    size_t slot_buf_size;               /* Buffer size for slots */ // slot buffer size 不超过WT_LOG_SLOT_BUF_SIZE (256 * 1024)
 #ifdef HAVE_DIAGNOSTIC
     uint64_t write_calls; /* Calls to log_write */
 #endif
 
 /* AUTOMATIC FLAG VALUE GENERATION START */
-#define WT_LOG_FORCE_NEWFILE 0x1u   /* Force switch to new log file */
+#define WT_LOG_FORCE_NEWFILE 0x1u   /* Force switch to new log file */ // 这个标识应该不是配置项
 #define WT_LOG_OPENED 0x2u          /* Log subsystem successfully open */
 #define WT_LOG_TRUNCATE_NOTSUP 0x4u /* File system truncate not supported */
                                     /* AUTOMATIC FLAG VALUE GENERATION STOP */

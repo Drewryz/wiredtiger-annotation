@@ -113,6 +113,8 @@ __wt_ispo2(uint32_t v)
 /*
  * __wt_rduppo2 --
  *     Round the given int up to the next multiple of N, where N is power of 2.
+ *     将给定的int四舍五入到下一个N的倍数，其中N是2的幂。
+ *     大概是说交给n设置为po2的1倍，2倍，3倍等等
  */
 uint32_t
 __wt_rduppo2(uint32_t n, uint32_t po2)

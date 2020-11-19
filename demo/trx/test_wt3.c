@@ -57,6 +57,7 @@ int main() {
     switch (cursor2->insert(cursor2)) {
     case 0: /* Success */
         session2->commit_transaction(session2,NULL);
+        // session2->commit_transaction(session2,"sync=on");
         break;
     case WT_ROLLBACK:
     default:

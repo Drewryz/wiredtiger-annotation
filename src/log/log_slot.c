@@ -84,10 +84,12 @@ __wt_log_slot_activate(WT_SESSION_IMPL *session, WT_LOGSLOT *slot)
     WT_PUBLISH(slot->slot_state, 0);
 }
 
+// reading here. 2020-11-16-17:39
 /*
  * __log_slot_close --
  *     Close out the slot the caller is using. The slot may already be closed or freed by another
- *     thread.
+ *     thread. 
+ *  close 当前slot，然后设置log lsn信息
  */
 static int
 __log_slot_close(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *releasep, bool forced)
@@ -120,6 +122,10 @@ retry:
      * WT_NOTFOUND anytime the given slot was processed by another closing thread. Only return 0
      * when we actually closed the slot.
      */
+    // TODO: WT_LOG_SLOT_CLOSED这个宏没有看明白
+    // #define WT_LOG_SLOT_CLOSED(state)                                                              \
+    // (WT_LOG_SLOT_ACTIVE(state) && (FLD_LOG_SLOT_ISSET((uint64_t)(state), WT_LOG_SLOT_CLOSE) && \
+    //                                 !FLD_LOG_SLOT_ISSET((uint64_t)(state), WT_LOG_SLOT_RESERVED)))
     if (WT_LOG_SLOT_CLOSED(old_state)) {
         WT_STAT_CONN_INCR(session, log_slot_close_race);
         return (WT_NOTFOUND);
@@ -131,6 +137,7 @@ retry:
         WT_STAT_CONN_INCR(session, log_slot_close_race);
         return (WT_NOTFOUND);
     }
+    // 
     new_state = (old_state | WT_LOG_SLOT_CLOSE);
     /*
      * Close this slot. If we lose the race retry.
@@ -141,7 +148,8 @@ retry:
      * We own the slot now. No one else can join. Set the end LSN.
      */
     WT_STAT_CONN_INCR(session, log_slot_closes);
-    if (WT_LOG_SLOT_DONE(new_state))
+    // #define WT_LOG_SLOT_DONE(state) (WT_LOG_SLOT_CLOSED(state) && !WT_LOG_SLOT_INPROGRESS(state))
+    if (WT_LOG_SLOT_DONE(new_state)) // TODO: 这个宏没有看懂。主要是关于slot state的宏有一坨，很难看明白
         *releasep = true;
     slot->slot_end_lsn = slot->slot_start_lsn;
 /*
@@ -175,13 +183,15 @@ retry:
 #endif
         }
     }
-
+    // (WT_LOG_SLOT_JOINED(old_state) & (WT_LOG_SLOT_UNBUFFERED - 1))
+    // buffered log + unbuffered log 就是整个slot的日志size
     end_offset = WT_LOG_SLOT_JOINED_BUFFERED(old_state) + slot->slot_unbuffered;
     slot->slot_end_lsn.l.offset += (uint32_t)end_offset;
     WT_STAT_CONN_INCRV(session, log_slot_consolidated, end_offset);
     /*
      * XXX Would like to change so one piece of code advances the LSN.
      */
+    // 更新全局日志管理器的lsn
     log->alloc_lsn = slot->slot_end_lsn;
     WT_ASSERT(session, log->alloc_lsn.l.file >= log->write_lsn.l.file);
     return (0);
@@ -255,6 +265,7 @@ __log_slot_new(WT_SESSION_IMPL *session)
             return (0);
         /*
          * Rotate among the slots to lessen collisions.
+         * 在slot之间旋转以减少碰撞。
          */
         WT_RET(WT_SESSION_CHECK_PANIC(session));
         for (i = 0, pool_i = log->pool_index; i < WT_SLOT_POOL; i++, pool_i++) {
@@ -264,20 +275,26 @@ __log_slot_new(WT_SESSION_IMPL *session)
             if (slot->slot_state == WT_LOG_SLOT_FREE) {
                 /*
                  * Acquire our starting position in the log file. Assume the full buffer size.
+                 * 获取我们在日志文件中的起始位置。假设缓冲区的大小是完整的。
                  */
+                // TODO: reading here. 2020-11-17-11:57
                 WT_RET(__wt_log_acquire(session, log->slot_buf_size, slot));
                 /*
                  * We have a new, initialized slot to use. Set it as the active slot.
                  */
                 log->active_slot = slot;
                 log->pool_index = pool_i;
-                __log_slot_dirty_max_check(session, slot);
+                __log_slot_dirty_max_check(session, slot); // TODO： 暂时跳过
                 return (0);
             }
         }
         /*
          * If we didn't find any free slots signal the worker thread. Release the lock so that any
          * threads waiting for it can acquire and possibly move things forward.
+         * 找不到空闲的slot，做下面三件事:
+         * 1. 通知worker
+         * 2. 释放log slot锁
+         * 3. 让出cpu
          */
         WT_STAT_CONN_INCR(session, log_slot_no_free_slots);
         __wt_cond_signal(session, conn->log_wrlsn_cond);
@@ -300,9 +317,11 @@ __log_slot_new(WT_SESSION_IMPL *session)
     /* NOTREACHED */
 }
 
+// ret = __wt_log_slot_switch(session, &myslot, false, NULL);
 /*
  * __log_slot_switch_internal --
  *     Switch out the current slot and set up a new one.
+ * forced：表示强制切slot
  */
 static int
 __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool forced, bool *did_work)
@@ -344,6 +363,7 @@ __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool for
         ret = __log_slot_close(session, slot, &release, forced);
         /*
          * If close returns WT_NOTFOUND it means that someone else is processing the slot change.
+         * 并发线程close同一个slot时，只有一个会成功，其余的会return (0)
          */
         if (ret == WT_NOTFOUND)
             return (0);
@@ -361,8 +381,9 @@ __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool for
      * Now that the slot is closed, set up a new one so that joining threads don't have to wait on
      * writing the previous slot if we release it. Release after setting a new one.
      */
+    // 设置新的active slot
     WT_RET(__log_slot_new(session));
-    F_CLR(myslot, WT_MYSLOT_CLOSE);
+    F_CLR(myslot, WT_MYSLOT_CLOSE); // TODO: MYSLOT的流转过程是什么
     if (F_ISSET(myslot, WT_MYSLOT_NEEDS_RELEASE)) {
         /*
          * The release here must be done while holding the slot lock. The reason is that a forced
@@ -376,10 +397,11 @@ __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool for
     }
     return (ret);
 }
-
+// ret = __wt_log_slot_switch(session, &myslot, true, false, NULL);
 /*
  * __wt_log_slot_switch --
  *     Switch out the current slot and set up a new one.
+ *  这个函数没有进行实际日志数据的复制(txn.buffer to slot.buffer)
  */
 int
 __wt_log_slot_switch(
@@ -509,6 +531,11 @@ __wt_log_slot_destroy(WT_SESSION_IMPL *session)
 /*
  * __wt_log_slot_join --
  *     Join a consolidated logging slot.
+ *     加入统一的日志记录槽。这注释真是没谁了。。。
+ *     总体来说，通过这个函数可以获取日志插入的位置，位置信息通过myslot返回。该函数并没有实际向slot复制数据
+ *  mysize是申请join的日志size
+ *  flags是txn->txn_logsync
+ *  myslot是传出参数，用于记录join的结果
  */
 void
 __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT_MYSLOT *myslot)
@@ -539,15 +566,19 @@ __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT
     if ((log->write_calls % WT_THOUSAND) == 0 || mysize > WT_LOG_SLOT_BUF_MAX) {
 #else
     diag_yield = false;
+    /*
+     * 申请join的size超过slot buffer的一半，则表示unbuffered
+     */
     if (mysize > WT_LOG_SLOT_BUF_MAX) {
 #endif
         unbuffered = true;
         F_SET(myslot, WT_MYSLOT_UNBUFFERED);
     }
-    for (;;) {
+    for (;;) { // 无锁循环
         WT_BARRIER();
         slot = log->active_slot;
         old_state = slot->slot_state;
+        // 成功打开了slot执行业务逻辑，否则重试
         if (WT_LOG_SLOT_OPEN(old_state)) {
             /*
              * Try to join our size into the existing size and atomically write it back into the
@@ -556,10 +587,10 @@ __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT
             flag_state = WT_LOG_SLOT_FLAGS(old_state);
             released = WT_LOG_SLOT_RELEASED(old_state);
             join_offset = WT_LOG_SLOT_JOINED(old_state);
-            if (unbuffered)
+            if (unbuffered) // 如果unbuffered，新join直接加上512k, 相当于将unbuffered flag置1
                 new_join = join_offset + WT_LOG_SLOT_UNBUFFERED;
             else
-                new_join = join_offset + (int32_t)mysize;
+                new_join = join_offset + (int32_t)mysize; // 这里mysize小于slot buffer的一半，加之join_offset小于WT_LOG_SLOT_BUF_MAX，因此new_join不会超过WT_LOG_SLOT_BUF_SIZE
             new_state = (int64_t)WT_LOG_SLOT_JOIN_REL(
               (int64_t)new_join, (int64_t)released, (int64_t)flag_state);
 
@@ -611,6 +642,7 @@ __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT
         if (slept)
             WT_STAT_CONN_INCR(session, log_slot_yield_sleep);
     }
+    // TODO: 对于txn->txn_logsync这个flag是怎么设置的
     if (LF_ISSET(WT_LOG_DSYNC | WT_LOG_FSYNC))
         F_SET(slot, WT_SLOT_SYNC_DIR);
     if (LF_ISSET(WT_LOG_FLUSH))
@@ -624,13 +656,14 @@ __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT
     }
     myslot->slot = slot;
     myslot->offset = join_offset;
+    // TODO: 这里有一个问题：如果mysize已经unbuffered的，那end_offset这样处理不会有问题吗？
     myslot->end_offset = (wt_off_t)((uint64_t)join_offset + mysize);
 }
 
 /*
  * __wt_log_slot_release --
  *     Each thread in a consolidated group releases its portion to signal it has completed copying
- *     its piece of the log into the memory buffer.
+ *     its piece of the log into the memory buffer. 合并组中的每个线程释放其部分，以表示它已完成将其日志片段复制到内存缓冲区中。
  */
 int64_t
 __wt_log_slot_release(WT_MYSLOT *myslot, int64_t size)

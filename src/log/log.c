@@ -711,6 +711,8 @@ __log_decrypt(WT_SESSION_IMPL *session, WT_ITEM *in, WT_ITEM *out)
 /*
  * __wt_log_fill --
  *     Copy a thread's log records into the assigned slot.
+ *     对于溢出的日志，该函数会直接将该日志写入文件
+ *     ret = __wt_log_fill(session, &myslot, false, record, &lsn);
  */
 int
 __wt_log_fill(
@@ -733,7 +735,11 @@ __wt_log_fill(
           myslot->offset + myslot->slot->slot_start_offset, record->size, record->mem));
 
     WT_STAT_CONN_INCRV(session, log_bytes_written, record->size);
+    /*
+     * 这里的lsn应该是该txn->record落盘时的lsn
+     */
     if (lsnp != NULL) {
+        // 注意这里是赋值操作
         *lsnp = myslot->slot->slot_start_lsn;
         lsnp->l.offset += (uint32_t)myslot->offset;
     }
@@ -1322,6 +1328,10 @@ err:
  * __wt_log_acquire --
  *     Called serially when switching slots. Can be called recursively from __log_newfile when we
  *     change log files.
+ * 这个函数主要做了三个事情：
+ * 1. 根据log的alloc lsn设置slot的release lsn
+ * 2. 如果log的空间不足以装下slot的recsize，则新建log文件
+ * 3. 将slot初始化成activation slot
  */
 int
 __wt_log_acquire(WT_SESSION_IMPL *session, uint64_t recsize, WT_LOGSLOT *slot)
@@ -1346,8 +1356,10 @@ __wt_log_acquire(WT_SESSION_IMPL *session, uint64_t recsize, WT_LOGSLOT *slot)
     /*
      * Make sure that the size can fit in the file. Proactively switch if it cannot. This reduces,
      * but does not eliminate, log files that exceed the maximum file size. We want to minimize the
-     * risk of an error due to no space.
+     * risk of an error due to no space. 
+     * 确保文件大小合适。如果不能，主动切换。这将减少(但不会消除)超过最大文件大小的日志文件。我们希望将由于没有空间而导致的错误风险降到最低。
      */
+    // TODO: 2020-11-17-14:45 reading here.
     if (F_ISSET(log, WT_LOG_FORCE_NEWFILE) || !__log_size_fit(session, &log->alloc_lsn, recsize)) {
         WT_RET(__log_newfile(session, false, &created_log));
         F_CLR(log, WT_LOG_FORCE_NEWFILE);
@@ -2569,6 +2581,9 @@ err:
 /*
  * __log_write_internal --
  *     Write a record into the log.
+ * flags: 来源于txn->txn_logsync
+ * lsnp: NULL
+ *
  */
 static int
 __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, uint32_t flags)
@@ -2585,14 +2600,14 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
 
     conn = S2C(session);
     log = conn->log;
-    if (record->size > UINT32_MAX)
+    if (record->size > UINT32_MAX) // 最大支持4GB log
         WT_RET_MSG(session, EFBIG, "Log record size of %" WT_SIZET_FMT
                                    " exceeds the maximum "
                                    "supported size of %" PRIu32,
           record->size, UINT32_MAX);
     WT_INIT_LSN(&lsn);
     myslot.slot = NULL;
-    memset(&myslot, 0, sizeof(myslot));
+    memset(&myslot, 0, sizeof(myslot)); // 这里既然要清空memset，那为什么需要上一步
     /*
      * Assume the WT_ITEM the caller passed is a WT_LOG_RECORD, which has a header at the beginning
      * for us to fill in.
@@ -2600,8 +2615,10 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
      * If using direct_io, the caller should pass us an aligned record. But we need to make sure it
      * is big enough and zero-filled so that we can write the full amount. Do this whether or not
      * direct_io is in use because it makes the reading code cleaner.
+     * 无论是否使用direct_io，都要这样做，因为这样可以使读取代码更清晰。
      */
     WT_STAT_CONN_INCRV(session, log_bytes_payload, record->size);
+    // 写入磁盘的log size，最小为log->allocsize，而且为log->allocsize的整数倍
     rdup_len = __wt_rduppo2((uint32_t)record->size, log->allocsize);
     WT_ERR(__wt_buf_grow(session, record, rdup_len));
     WT_ASSERT(session, record->data == record->mem);
@@ -2612,7 +2629,7 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
      * The cast is safe, we've already checked to make sure it's in range.
      */
     fill_size = rdup_len - (uint32_t)record->size;
-    if (fill_size != 0) {
+    if (fill_size != 0) { // 需要填充，填充0
         memset((uint8_t *)record->mem + record->size, 0, fill_size);
         /*
          * Set the last byte of the log record to a non-zero value, that allows us, on the input
@@ -2662,10 +2679,15 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
      */
     force = LF_ISSET(WT_LOG_FLUSH | WT_LOG_FSYNC);
     ret = 0;
+    /*
+     * 如果txn log是unbuffered 或者设置了fsync，以及。。。(WT_LOG_FLUSH???)。则进行slot switch
+     */
     if (myslot.end_offset >= WT_LOG_SLOT_BUF_MAX || F_ISSET(&myslot, WT_MYSLOT_UNBUFFERED) || force)
         ret = __wt_log_slot_switch(session, &myslot, true, false, NULL);
+    // reading here. 2020-11-18-21:34
     if (ret == 0)
         ret = __wt_log_fill(session, &myslot, false, record, &lsn);
+    // reading here. 2020-11-17-17:28
     release_size = __wt_log_slot_release(&myslot, (int64_t)rdup_len);
     /*
      * If we get an error we still need to do proper accounting in the slot fields. XXX On error we
