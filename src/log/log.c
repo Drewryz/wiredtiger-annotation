@@ -189,10 +189,15 @@ __log_fs_read(WT_SESSION_IMPL *session, WT_FH *fh, wt_off_t offset, size_t len, 
     return (ret);
 }
 
+// WT_ERR(__log_fs_write(
+//           session, slot, slot->slot_start_offset, (size_t)release_buffered, slot->slot_buf.mem));
 /*
  * __log_fs_write --
  *     Wrapper when writing to a log file. If we're writing to a new log file for the first time
  *     wait for writes to the previous log file.
+ *  offset: 文件偏移，传入的参数为slot->slot_start_offset
+ *  写入的数据：buf[0,len-1]
+ *  该函数将日志写入到操作系统缓冲区，没有做sync
  */
 static int
 __log_fs_write(
@@ -200,14 +205,18 @@ __log_fs_write(
 {
     WT_DECL_RET;
 
+    // reading here. 2020-11-19-17:46
     /*
      * If we're writing into a new log file and we're running in compatibility mode to an older
      * release, we have to wait for all writes to the previous log file to complete otherwise there
      * could be a hole at the end of the previous log file that we cannot detect.
+     * 上面的两个原因没有看懂
      *
      * NOTE: Check for a version less than the one writing the system record since we've had a log
      * version change without any actual file format changes.
      */
+    // reading here. 2020-11-19-20:08
+    // TODO: 这个逻辑没有搞明白，暂时跳过。
     if (S2C(session)->log->log_version < WT_LOG_VERSION_SYSTEM &&
       slot->slot_release_lsn.l.file < slot->slot_start_lsn.l.file) {
         __log_wait_for_earlier_slot(session, slot);
@@ -1875,6 +1884,9 @@ __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
     if (freep != NULL)
         *freep = 1;
     release_buffered = WT_LOG_SLOT_RELEASED_BUFFERED(slot->slot_state);
+    /*
+     * slot->slot_unbuffered在__wt_log_slot_join函数中赋值
+     */
     release_bytes = release_buffered + slot->slot_unbuffered;
 
     /*
@@ -1883,24 +1895,33 @@ __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
      * accumulated field. There is a bit of layering violation here checking the connection ckpt
      * field and using its condition.
      */
+    // TODO: 关于checkpoint先跳过
     if (WT_CKPT_LOGSIZE(conn)) {
         log->log_written += (wt_off_t)release_bytes;
         __wt_checkpoint_signal(session, log->log_written);
     }
 
-    /* Write the buffered records */
+    /*
+     * 先将数据写到操作系统缓冲区 
+     */
+    /* Write the buffered records 先写buffered record*/
     if (release_buffered != 0)
         WT_ERR(__log_fs_write(
           session, slot, slot->slot_start_offset, (size_t)release_buffered, slot->slot_buf.mem));
+
 
     /*
      * If we have to wait for a synchronous operation, we do not pass handling of this slot off to
      * the worker thread. The caller is responsible for freeing the slot in that case. Otherwise the
      * worker thread will free it.
      */
-    if (!F_ISSET(slot, WT_SLOT_FLUSH | WT_SLOT_SYNC_FLAGS)) {
+    if (!F_ISSET(slot, WT_SLOT_FLUSH | WT_SLOT_SYNC_FLAGS)) { // TODO: 这几个slot标识指的是什么
+        /*
+         * 不需要立刻刷盘就交给worker线程来刷 
+         */
         if (freep != NULL)
             *freep = 0;
+        // 刷盘操作交给worker来做
         slot->slot_state = WT_LOG_SLOT_WRITTEN;
         /*
          * After this point the worker thread owns the slot. There is nothing more to do but return.
@@ -1914,6 +1935,7 @@ __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
         return (0);
     }
 
+    // reading here. 2020-11-19-21:32
     /*
      * Wait for earlier groups to finish, otherwise there could be holes in the log file.
      */
@@ -2687,6 +2709,9 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
     // reading here. 2020-11-18-21:34
     if (ret == 0)
         ret = __wt_log_fill(session, &myslot, false, record, &lsn);
+    /*
+     * TODO: 考虑多线程的行为 
+     */
     // reading here. 2020-11-17-17:28
     release_size = __wt_log_slot_release(&myslot, (int64_t)rdup_len);
     /*
@@ -2696,7 +2721,16 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
     if (ret != 0)
         myslot.slot->slot_error = ret;
     WT_ASSERT(session, ret == 0);
+    /*
+     * 每个线程往slot写日志经历了下面几个阶段：
+     * 1. 申请slot的offset，此时更改了slot.joined域，参见：__wt_log_slot_join
+     * 2. 向slot中实际拷贝数据，参见：__wt_log_fill
+     * 3. 拷贝完成后会设置slot.released域，参见：__wt_log_slot_release
+     * 对于同一个slot，如果再这一步检查到slot.joined == slot.released, 表示该slot has done
+     */
+    // #define WT_LOG_SLOT_DONE(state) (WT_LOG_SLOT_CLOSED(state) && !WT_LOG_SLOT_INPROGRESS(state))
     if (WT_LOG_SLOT_DONE(release_size)) {
+        // 对于并行操作同一个slot的情景，应该只有一个线程能够进入__wt_log_release函数，而且进入的线程满足 !WT_LOG_SLOT_INPROGRESS(state))
         WT_ERR(__wt_log_release(session, myslot.slot, &free_slot));
         if (free_slot)
             __wt_log_slot_free(session, myslot.slot);

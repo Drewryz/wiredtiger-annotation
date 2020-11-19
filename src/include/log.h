@@ -150,6 +150,7 @@ union __wt_lsn {
 /*
  * The high bit is reserved for the special states. If the high bit is set (WT_LOG_SLOT_RESERVED)
  * then we are guaranteed to be in a special state.
+ * 只要slot.state设置为WT_LOG_SLOT_FREE或者WT_LOG_SLOT_WRITTEN，WT_LOG_SLOT_RESERVED都被设置成了1。牛逼，还能这么玩。
  */
 #define WT_LOG_SLOT_FREE (-1)    /* Not in use */
 #define WT_LOG_SLOT_WRITTEN (-2) /* Slot data written, not processed */
@@ -213,13 +214,16 @@ struct __wt_logslot {
     volatile int64_t slot_state; /* Slot state */ // TODO: 这个变量是如何按位组织数据的
     int64_t slot_unbuffered;     /* Unbuffered data in this slot */ // 记录unbuffered日志的size
     int slot_error;              /* Error value */
-    // 表示这个slot，开始写入日志文件时的偏移。参见__wt_log_slot_activate函数
+    // 表示这个slot，开始写入日志文件时的文件偏移，表示要从日志文件的哪个位置开始写起。参见__wt_log_slot_activate函数
     wt_off_t slot_start_offset;  /* Starting file offset */
     // 表示这个slot，最后写入日志文件的偏移
     wt_off_t slot_last_offset;   /* Last record offset */
-    // TODO: 
+    /* 
+     * 一般来说，slot_release_lsn都等于slot_start_lsn, 除非发生了日志file切换
+     * TOOD: 那么为什么呢？
+     */ 
     WT_LSN slot_release_lsn;     /* Slot release LSN */
-    // 表示这个slot开始时在日志文件中的lsn，猜测slot_start_lsn.l.offset == slot_start_offset
+    // 表示这个slot往日志文件中写日志的起始lsn，猜测slot_start_lsn.l.offset == slot_start_offset
     WT_LSN slot_start_lsn;       /* Slot starting LSN */
     // 表示这个slot结束时在日志文件中的lsn
     WT_LSN slot_end_lsn;         /* Slot ending LSN */
@@ -228,9 +232,19 @@ struct __wt_logslot {
 
 /* AUTOMATIC FLAG VALUE GENERATION START */
 #define WT_SLOT_CLOSEFH 0x01u    /* Close old fh on release */
+/*
+ * 如果txn的txn_logsync设置了WT_LOG_FLUSH，那么slot设置该标志位 
+ */
 #define WT_SLOT_FLUSH 0x02u      /* Wait for write */
+/*
+ * 如果txn的txn_logsync设置了fsync，那么slot设置该标志位。 
+ */
 #define WT_SLOT_SYNC 0x04u       /* Needs sync on release */
+/*
+ * 如果txn的txn_logsync设置了fsync或者dsync，那么slot设置该标志位。 
+ */
 #define WT_SLOT_SYNC_DIR 0x08u   /* Directory sync on release */
+// TODO: ？？？？
 #define WT_SLOT_SYNC_DIRTY 0x10u /* Sync system buffers on release */
                                  /* AUTOMATIC FLAG VALUE GENERATION STOP */
     uint32_t flags;
@@ -279,6 +293,7 @@ struct __wt_log {
     WT_FH *log_close_fh;   /* Logging file handle to close */
     WT_LSN log_close_lsn;  /* LSN needed to close */
 
+    /* 当前wt运行的WAL版本 */
     uint16_t log_version; /* Version of log file */
 
     /*
@@ -386,12 +401,17 @@ struct __wt_log_desc {
                          * MongoDB to detect users accidentally running old binaries on a newer
                          * release. There are no actual log file format changes with version 2,
                          * version 3 and version 4.
+                         * WT_LOG_VERSION 2 3 4 的日志格式都是一样的。也就是说当前wt只有两个版本的WAL日志
                          */
 #define WT_LOG_VERSION 4
     uint16_t version;  /* 04-05: Log version */
     uint16_t unused;   /* 06-07: Unused */
     uint64_t log_size; /* 08-15: Log file size */
 };
+
+/*
+ * 实际的WAL版本
+ */
 /*
  * This is the log version that introduced the system record.
  */

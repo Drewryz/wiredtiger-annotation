@@ -363,7 +363,6 @@ __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool for
         ret = __log_slot_close(session, slot, &release, forced);
         /*
          * If close returns WT_NOTFOUND it means that someone else is processing the slot change.
-         * 并发线程close同一个slot时，只有一个会成功，其余的会return (0)
          */
         if (ret == WT_NOTFOUND)
             return (0);
@@ -383,7 +382,7 @@ __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool for
      */
     // 设置新的active slot
     WT_RET(__log_slot_new(session));
-    F_CLR(myslot, WT_MYSLOT_CLOSE); // TODO: MYSLOT的流转过程是什么
+    F_CLR(myslot, WT_MYSLOT_CLOSE);
     if (F_ISSET(myslot, WT_MYSLOT_NEEDS_RELEASE)) {
         /*
          * The release here must be done while holding the slot lock. The reason is that a forced
@@ -424,6 +423,9 @@ __wt_log_slot_switch(
      * because we are responsible for setting up the new slot.
      */
     do {
+        /*
+         * 所有线程在做switch slot操作时，都要加log_slot_lock锁
+         */
         WT_WITH_SLOT_LOCK(
           session, log, ret = __log_slot_switch_internal(session, myslot, forced, did_work));
         if (ret == EBUSY) {
@@ -664,6 +666,7 @@ __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT
  * __wt_log_slot_release --
  *     Each thread in a consolidated group releases its portion to signal it has completed copying
  *     its piece of the log into the memory buffer. 合并组中的每个线程释放其部分，以表示它已完成将其日志片段复制到内存缓冲区中。
+ *     这里设置slot的release size，但是并没有实际往磁盘写入数据。所以，slot.release并不表示往磁盘写了多少数据。
  */
 int64_t
 __wt_log_slot_release(WT_MYSLOT *myslot, int64_t size)
@@ -695,6 +698,7 @@ __wt_log_slot_release(WT_MYSLOT *myslot, int64_t size)
     rel_size = size;
     if (F_ISSET(myslot, WT_MYSLOT_UNBUFFERED))
         rel_size = WT_LOG_SLOT_UNBUFFERED;
+    // 这里设置release size
     my_size = (int64_t)WT_LOG_SLOT_JOIN_REL((int64_t)0, rel_size, 0);
     return (__wt_atomic_addiv64(&slot->slot_state, my_size));
 }
