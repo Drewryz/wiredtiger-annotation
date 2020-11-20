@@ -230,6 +230,9 @@ struct __wt_logslot {
     WT_FH *slot_fh;              /* File handle for this group */
     WT_ITEM slot_buf;            /* Buffer for grouped writes */
 
+/*
+ * ???? 
+ */
 /* AUTOMATIC FLAG VALUE GENERATION START */
 #define WT_SLOT_CLOSEFH 0x01u    /* Close old fh on release */
 /*

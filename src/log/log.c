@@ -1866,6 +1866,14 @@ __log_check_partial_write(WT_SESSION_IMPL *session, WT_ITEM *buf, uint32_t recle
 /*
  * __wt_log_release --
  *     Release a log slot.
+ * 这个函数主要做了下面几个事情：
+ * 1. 将buffered的数据写入到日志文件，但是并未进行sync
+ * 2. 根据slot的配置，如果不需要立刻刷盘，则将刷盘动作交给worker。
+ *    交给worker的过程也很简单：只需要将slot的state置为WT_LOG_SLOT_WRITTEN
+ * 3. 对于需要立刻刷盘的slot，要经历下面几个步骤：
+ *    1). 等待较早的slot刷盘完成. TODO: 怎么等待的
+ *    2). 设置log->write_lsn, signal log_write_cond
+ *    3). 真正做fsync
  */
 int
 __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
@@ -1946,6 +1954,10 @@ __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
     log->write_lsn = slot->slot_end_lsn;
 
     WT_ASSERT(session, slot != log->active_slot);
+    // TODO: reading here. 2020-11-20-12:00
+    /*
+     * 任何对write_lsn的改动都需要signal log->log_write_cond
+     */
     __wt_cond_signal(session, log->log_write_cond);
     F_CLR(slot, WT_SLOT_FLUSH);
 
@@ -1968,6 +1980,7 @@ __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
     /*
      * Try to consolidate calls to fsync to wait less. Acquire a spin lock so that threads finishing
      * writing to the log will wait while the current fsync completes and advance log->sync_lsn.
+     * 尝试将调用合并到fsync以减少等待时间。获取一个自旋锁，以便在当前fsync完成并推进log->sync_lsn时，完成对日志的写入的线程将等待。
      */
     while (F_ISSET(slot, WT_SLOT_SYNC | WT_SLOT_SYNC_DIR)) {
         /*
@@ -2747,6 +2760,9 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
             WT_ERR(__wt_log_force_write(session, 1, NULL));
     }
     if (LF_ISSET(WT_LOG_FLUSH)) {
+        /*
+         * TODO: 这里在比较lsn的时候为什么是<=0，而不是<0 
+         */
         /* Wait for our writes to reach the OS */
         while (__wt_log_cmp(&log->write_lsn, &lsn) <= 0 && myslot.slot->slot_error == 0)
             __wt_cond_wait(session, log->log_write_cond, 10000, NULL);
