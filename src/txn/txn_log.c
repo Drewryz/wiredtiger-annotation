@@ -373,7 +373,7 @@ __wt_txn_checkpoint_logread(
     u_int ckpt_nsnapshot_unused;
     const char *fmt;
 
-    fmt = WT_UNCHECKED_STRING(IIIu);
+    fmt = WT_UNCHECKED_STRING(IIIu); // fmt ???
 
     if ((ret = __wt_struct_unpack(session, *pp, WT_PTRDIFF(end, *pp), fmt, &ckpt_file, &ckpt_offset,
            &ckpt_nsnapshot_unused, &ckpt_snapshot_unused)) != 0)

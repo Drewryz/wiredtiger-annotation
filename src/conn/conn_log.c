@@ -513,6 +513,7 @@ __wt_log_truncate_files(WT_SESSION_IMPL *session, WT_CURSOR *cursor, bool force)
  * __log_file_server --
  *     The log file server thread. This worker thread manages log file operations such as closing
  *     and syncing.
+ * 这个线程主要用于：WAL文件close和sync
  */
 static WT_THREAD_RET
 __log_file_server(void *arg)
@@ -536,8 +537,9 @@ __log_file_server(void *arg)
         /*
          * If there is a log file to close, make sure any outstanding write operations have
          * completed, then fsync and close it.
+         * 如果log管理器log_close_fh存在，则对其做fsync，并close。然后更新log.sync_lsn为log_close_fh
          */
-        if ((close_fh = log->log_close_fh) != NULL) {
+        if ((close_fh = log->log_close_fh) != NULL) { // TODO: reading here. 2020-11-23-11:58
             WT_ERR(__wt_log_extract_lognum(session, close_fh->name, &filenum));
             /*
              * The closing file handle should have a correct close LSN.
@@ -566,6 +568,9 @@ __log_file_server(void *arg)
                  * zeroed space. We can't truncate the file during hot backup, or the underlying
                  * file system may not support truncate: both are OK, it's just more work during
                  * cursor traversal.
+                 * 我们希望让文件大小反映实际数据，并预先分配最小的零空间。
+                 * 我们不能在热备份期间截断文件，或者底层文件系统可能不支持截断:这两种情况都可以，只是在游标遍历期间需要做更多的工作。
+                 * TODO: ???
                  */
                 if (conn->hot_backup_start == 0 && conn->log_cursors == 0) {
                     WT_WITH_HOTBACKUP_READ_LOCK(session,
@@ -604,6 +609,7 @@ __log_file_server(void *arg)
                  * If the sync file is behind either the one wanted for a background sync or the
                  * write LSN has moved to another file continue to let this worker thread process
                  * that older file immediately.
+                 * 这里如果bg_sync_lsn或者write_lsn与sync_lsn相比，切换到了新的文件，continue。猜测应该是让上一个if逻辑做。
                  */
                 if ((log->sync_lsn.l.file < log->bg_sync_lsn.l.file) ||
                   (log->sync_lsn.l.file < min_lsn.l.file))
@@ -872,6 +878,10 @@ __log_server(void *arg)
      * quickly as possible. The same reason applies to why the log file server thread does not force
      * out the writes. That thread does fsync calls which can take a long time and we don't want log
      * records sitting in the buffer over the time it takes to sync out an earlier file.
+     * log server线程主要做三件事：
+     * 1. 强制将buffered log写到文件
+     * 2. WAL log file预分配
+     * 3. 执行日志归档
      */
     did_work = true;
     while (F_ISSET(conn, WT_CONN_SERVER_LOG)) {

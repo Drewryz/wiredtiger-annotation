@@ -24,7 +24,7 @@ typedef struct {
     u_int max_fileid;  /* Maximum file ID seen. */
     u_int nfiles;      /* Number of files in the metadata. */
 
-    WT_LSN ckpt_lsn;     /* Start LSN for main recovery loop. */
+    WT_LSN ckpt_lsn;     /* Start LSN for main recovery loop. */ // ?????
     WT_LSN max_ckpt_lsn; /* Maximum checkpoint LSN seen. */
     WT_LSN max_rec_lsn;  /* Maximum recovery LSN seen. */
 
@@ -302,6 +302,7 @@ __txn_commit_apply(WT_RECOVERY *r, WT_LSN *lsnp, const uint8_t **pp, const uint8
     return (0);
 }
 
+// WT_ERR((*func)(session, cbbuf, &rd_lsn, &next_lsn, cookie, firstrecord));
 /*
  * __txn_log_recover --
  *     Roll the log forward to recover committed changes.
@@ -328,14 +329,15 @@ __txn_log_recover(WT_SESSION_IMPL *session, WT_ITEM *logrec, WT_LSN *lsnp, WT_LS
      * Record the highest LSN we process during the metadata phase. If not the metadata phase, then
      * stop at that LSN.
      */
-    if (r->metadata_only)
+    if (r->metadata_only) // TODO: 为什么只有恢复metadata的时候才记录max rec lsn?
         r->max_rec_lsn = *next_lsnp;
     else if (__wt_log_cmp(lsnp, &r->max_rec_lsn) >= 0)
         return (0);
 
+    // TODO: 单步跟下
     switch (rectype) {
     case WT_LOGREC_CHECKPOINT:
-        if (r->metadata_only)
+        if (r->metadata_only) // TODO: 这里只是将ckpt读出来，赋值给r->ckpt_lsn读出来, 那是为了做什么呢
             WT_RET(__wt_txn_checkpoint_logread(session, &p, end, &r->ckpt_lsn));
         break;
 
@@ -529,7 +531,7 @@ __wt_txn_recover(WT_SESSION_IMPL *session)
     config = NULL;
     do_checkpoint = true;
     eviction_started = false;
-    was_backup = F_ISSET(conn, WT_CONN_WAS_BACKUP);
+    was_backup = F_ISSET(conn, WT_CONN_WAS_BACKUP); // 跳过
 
     /* We need a real session for recovery. */
     WT_RET(__wt_open_internal_session(conn, "txn-recover", false, WT_SESSION_NO_LOGGING, &session));
@@ -539,8 +541,24 @@ __wt_txn_recover(WT_SESSION_IMPL *session)
     conn->txn_global.recovery_timestamp = conn->txn_global.meta_ckpt_timestamp = WT_TS_NONE;
 
     F_SET(conn, WT_CONN_RECOVERING);
+    /*
+     * #define WT_METAFILE_URI "file:WiredTiger.wt"
+     * 对于file:WiredTiger.wt这个key，存储的是wt的config
+     * 并且，wt的config存储的内容有checkpoint_lsn。参见config内容：
+     * "
+     *  access_pattern_hint=none,allocation_size=4KB,app_metadata=,assert=(commit_timestamp=none,durable_timestamp=none,read_timestamp=none),block_allocation=best,block
+     *  _compressor=,cache_resident=false,checksum=uncompressed,collator=,columns=,dictionary=0,encryption=(keyid=,name=),format=btree,huffman_key=,huffman_value=,id=0,ignore_in_memory
+     *  _cache_size=false,internal_item_max=0,internal_key_max=0,internal_key_truncate=true,internal_page_max=4KB,key_format=S,key_gap=10,leaf_item_max=0,leaf_key_max=0,leaf_page_max=3
+     *  2KB,leaf_value_max=0,log=(enabled=true),memory_page_image_max=0,memory_page_max=5MB,os_cache_dirty_max=0,os_cache_max=0,prefix_compression=false,prefix_compression_min=4,split_
+     *  deepen_min_child=0,split_deepen_per_child=0,split_pct=90,value_format=S,version=(major=1,minor=1),checkpoint=(WiredTigerCheckpoint.2=(addr=\"018581e4b68017138681e4424107b48781e
+     *  41a9983b6808080e26fc0cfc0\",order=2,time=1606188124,size=8192,newest_durable_ts=0,oldest_start_ts=0,oldest_start_txn=0,newest_stop_ts=-1,newest_stop_txn=-11,write_gen=4)),check
+     *  point_backup_info=,checkpoint_lsn=(1,4608)
+     * "
+     */
     WT_ERR(__wt_metadata_search(session, WT_METAFILE_URI, &config));
+    // reading here. 2020-11-23-21:23
     WT_ERR(__recovery_setup_file(&r, WT_METAFILE_URI, config));
+    // TODO: reading here. 2020-11-24-11:45. 梳理下__recovery_setup_file所做的事
     WT_ERR(__wt_metadata_cursor_open(session, NULL, &metac));
     metafile = &r.files[WT_METAFILE_ID];
     metafile->c = metac;
@@ -575,6 +593,10 @@ __wt_txn_recover(WT_SESSION_IMPL *session)
     }
 
     /*
+     * 第一步先恢复metadata 
+     */
+
+    /*
      * First, do a pass through the log to recover the metadata, and establish the last checkpoint
      * LSN. Skip this when opening a hot backup: we already have the correct metadata in that case.
      *
@@ -604,6 +626,10 @@ __wt_txn_recover(WT_SESSION_IMPL *session)
             r.ckpt_lsn = metafile->ckpt_lsn;
             ret = __wt_log_scan(
               session, &metafile->ckpt_lsn, WT_LOGSCAN_RECOVER_METADATA, __txn_log_recover, &r);
+
+            // TODO: reading here 2020-11-24-21:03
+            // 以上代码将metadata recover， 但是有一些问题：
+            // 1. r.ckpt_lsn这个表示什么？ 在recover metadata的过程中，会更新r.ckpt_lsn
         }
         if (F_ISSET(conn, WT_CONN_SALVAGE))
             ret = 0;

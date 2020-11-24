@@ -73,6 +73,7 @@ err:
 /*
  * __wt_log_recover_system --
  *     Process a system log record for the previous LSN in recovery.
+ * TODO: 这里的previous LSN指的是什么 
  */
 int
 __wt_log_recover_system(

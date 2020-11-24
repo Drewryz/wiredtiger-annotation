@@ -920,6 +920,11 @@ __log_open_verify(WT_SESSION_IMPL *session, uint32_t id, WT_FH **fhp, WT_LSN *ls
     WT_ERR(__log_fs_read(session, fh, 0, allocsize, buf->mem));
     logrec = (WT_LOG_RECORD *)buf->mem;
     __wt_log_record_byteswap(logrec);
+    // 对于一个WAL文件来说，它的起始应该是
+    /*
+     * WT_LOG_RECORD | WT_LOG_DESC
+     *  
+     */
     desc = (WT_LOG_DESC *)logrec->record;
     __wt_log_desc_byteswap(desc);
     if (desc->log_magic != WT_LOG_MAGIC) {
@@ -991,6 +996,9 @@ __log_open_verify(WT_SESSION_IMPL *session, uint32_t id, WT_FH **fhp, WT_LSN *ls
     __wt_log_record_byteswap(logrec);
     p = WT_LOG_SKIP_HEADER(buf->data);
     end = (const uint8_t *)buf->data + allocsize;
+    // TODO: reading here. 
+    // 如何读取文件的
+    // __wt_logrec_read这个函数的细节
     WT_ERR(__wt_logrec_read(session, &p, end, &rectype));
     if (rectype != WT_LOGREC_SYSTEM)
         WT_ERR_MSG(session, WT_ERROR, "System log record missing");
@@ -2062,6 +2070,8 @@ __log_salvage_message(
     return (WT_ERROR);
 }
 
+// ret = __wt_log_scan(
+//               session, &metafile->ckpt_lsn, WT_LOGSCAN_RECOVER_METADATA, __txn_log_recover, &r);
 /*
  * __wt_log_scan --
  *     Scan the logs, calling a function on each record found.
@@ -2115,7 +2125,7 @@ __wt_log_scan(WT_SESSION_IMPL *session, WT_LSN *lsnp, uint32_t flags,
     if (log != NULL) {
         allocsize = log->allocsize;
         end_lsn = log->alloc_lsn;
-        start_lsn = log->first_lsn;
+        start_lsn = log->first_lsn; // start_lsn 默认是第一条日志(0, 0)
         if (lsnp == NULL) {
             if (LF_ISSET(WT_LOGSCAN_FROM_CKP))
                 start_lsn = log->ckpt_lsn;
@@ -2146,7 +2156,7 @@ __wt_log_scan(WT_SESSION_IMPL *session, WT_LSN *lsnp, uint32_t flags,
         WT_SET_LSN(&end_lsn, lastlog, 0);
         WT_ERR(__wt_fs_directory_list_free(session, &logfiles, logcount));
     }
-    if (lsnp != NULL) {
+    if (lsnp != NULL) { // 如果传有lsnp，则将start_lsn设为*lsnp
         /*
          * Offsets must be on allocation boundaries. An invalid LSN from a user should just return
          * WT_NOTFOUND. It is not an error. But if it is from recovery, we expect valid LSNs so give
@@ -2182,8 +2192,9 @@ __wt_log_scan(WT_SESSION_IMPL *session, WT_LSN *lsnp, uint32_t flags,
     WT_ERR(__log_open_verify(session, start_lsn.l.file, &log_fh, &prev_lsn, NULL, &need_salvage));
     if (need_salvage)
         WT_ERR_MSG(session, WT_ERROR, "log file requires salvage");
+    // reading here.
     WT_ERR(__wt_filesize(session, log_fh, &log_size));
-    rd_lsn = start_lsn;
+    rd_lsn = start_lsn; // 从start_lsn开始遍历日志
     if (LF_ISSET(WT_LOGSCAN_RECOVER | WT_LOGSCAN_RECOVER_METADATA))
         __wt_verbose(session, WT_VERB_RECOVERY_PROGRESS,
           "Recovering log %" PRIu32 " through %" PRIu32, rd_lsn.l.file, end_lsn.l.file);
@@ -2192,7 +2203,7 @@ __wt_log_scan(WT_SESSION_IMPL *session, WT_LSN *lsnp, uint32_t flags,
     WT_ERR(__wt_scr_alloc(session, 0, &decryptitem));
     WT_ERR(__wt_scr_alloc(session, 0, &uncitem));
     for (;;) {
-        if (rd_lsn.l.offset + allocsize > log_size) {
+        if (rd_lsn.l.offset + allocsize > log_size) { // 当一个WAL文件读完后
 advance:
             if (rd_lsn.l.offset == log_size)
                 partial_record = false;
@@ -2267,6 +2278,7 @@ advance:
             eol = false;
             continue;
         }
+        // 读当前文件
         /*
          * Read the minimum allocation size a record could be. Conditionally set the need_salvage
          * flag so that if the read fails, we know this is an situation we can salvage.

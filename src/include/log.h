@@ -310,6 +310,9 @@ struct __wt_log {
     WT_LSN sync_dir_lsn;    /* LSN of the last directory sync */
     WT_LSN sync_lsn;        /* LSN of the last sync */
     WT_LSN trunc_lsn;       /* End LSN for recovery truncation */
+    /*
+     * write_lsn表示write到WAL file的位点。这个位点并没有做sync 
+     */
     WT_LSN write_lsn;       /* End of last LSN written */
     WT_LSN write_start_lsn; /* Beginning of last LSN written */
 

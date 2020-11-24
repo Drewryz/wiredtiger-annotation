@@ -267,6 +267,7 @@ err:
     return (ret);
 }
 
+// key = file:WiredTiger.wt
 /*
  * __wt_metadata_search --
  *     Return a copied row from the metadata. The caller is responsible for freeing the allocated
@@ -286,7 +287,7 @@ __wt_metadata_search(WT_SESSION_IMPL *session, const char *key, char **valuep)
       "turtle",
       key, WT_META_TRACKING(session) ? "true" : "false", __metadata_turtle(key) ? "" : "not ");
 
-    if (__metadata_turtle(key)) {
+    if (__metadata_turtle(key)) { // 要在WiredTiger.turtle搜索
         /*
          * The returned value should only be set if ret is non-zero, but Coverity is convinced
          * otherwise. The code path is used enough that Coverity complains a lot, add an error check
