@@ -15,6 +15,10 @@ typedef struct {
     WT_LSN ckpt_lsn; /* File's checkpoint LSN. */
 } WT_RECOVERY_FILE;
 
+/*
+ *  WT_RECOVERY是wt恢复系统所用到的基础数据结构。
+ *  这个数据结构记录了所有wt系统数据文件的uri以及对应的cursor和checkpoint lsn
+ */
 typedef struct {
     WT_SESSION_IMPL *session;
 
@@ -488,6 +492,15 @@ __recovery_file_scan(WT_RECOVERY *r)
     WT_DECL_RET;
     int cmp;
     const char *uri, *config;
+    
+    /*
+     * files[0]就是wt的元数据文件(WiredTiger.wt)。WiredTiger.wt也是一个btree。
+     * WiredTiger.wt中以file:起始的key, 记录的是wt系统中除了WiredTiger.wt以外所有的数据文件的元数据信息(*.wt) 
+     * 该函数从WiredTiger.wt遍历所有数据文件的元数据信息，在遍历的过程中更新WT_RECOVERY，具体更新过程参考__recovery_setup_file
+     * TODO:
+     * 为什么有了WiredTiger.wt，还需要WiredTiger.turtle
+     * 为什么每个数据文件都有自己的checkpoint lsn
+     */
 
     /* Scan through all files in the metadata. */
     c = r->files[0].c;
@@ -647,6 +660,7 @@ __wt_txn_recover(WT_SESSION_IMPL *session)
 
     /* Scan the metadata to find the live files and their IDs. */
     WT_ERR(__recovery_file_scan(&r));
+    // reading here. 2020-11-25-11:54
     /*
      * Clear this out. We no longer need it and it could have been re-allocated when scanning the
      * files.
@@ -709,6 +723,7 @@ __wt_txn_recover(WT_SESSION_IMPL *session)
 
     conn->next_file_id = r.max_fileid;
 
+    // reading here. 2020-11-25-16:04
 done:
     WT_ERR(__recovery_set_checkpoint_timestamp(&r));
     if (do_checkpoint)

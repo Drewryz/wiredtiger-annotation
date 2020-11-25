@@ -379,6 +379,8 @@ err:
  * __wt_log_needs_recovery --
  *     Return 0 if we encounter a clean shutdown and 1 if recovery must be run in the given
  *     variable.
+ * 这个注释真是太迷惑人了，这里的Return指的是recp，而不是函数的返回值
+ * 输出参数，recp == true，表示需要恢复
  */
 int
 __wt_log_needs_recovery(WT_SESSION_IMPL *session, WT_LSN *ckp_lsn, bool *recp)
@@ -403,9 +405,11 @@ __wt_log_needs_recovery(WT_SESSION_IMPL *session, WT_LSN *ckp_lsn, bool *recp)
     if (log == NULL)
         return (0);
 
+    // log cursor, 参见：https://source.wiredtiger.com/mongodb-3.4/cursor_log.html
     /*
      * See if there are any data modification records between the checkpoint LSN and the end of the
      * log. If there are none then we can skip recovery.
+     * 查看检查点LSN和日志末尾之间是否有任何数据修改记录。如果没有，那么我们可以跳过恢复。
      */
     WT_RET(__wt_curlog_open(session, "log:", NULL, &c));
     c->set_key(c, ckp_lsn->l.file, ckp_lsn->l.offset, 0);
