@@ -345,7 +345,7 @@ __txn_oldest_scan(WT_SESSION_IMPL *session, uint64_t *oldest_idp, uint64_t *last
 /*
  * __wt_txn_update_oldest --
  *     Sweep the running transactions to update the oldest ID required.
- * 扫描正在运行的事务以更新所需的最旧ID。
+ * 扫描正在运行的事务以更新所需的最旧ID。WT_ERR(__wt_txn_update_oldest(session, WT_TXN_OLDEST_STRICT | WT_TXN_OLDEST_WAIT));
  */
 int
 __wt_txn_update_oldest(WT_SESSION_IMPL *session, uint32_t flags)
@@ -367,7 +367,7 @@ __wt_txn_update_oldest(WT_SESSION_IMPL *session, uint32_t flags)
     prev_last_running = txn_global->last_running;
     prev_metadata_pinned = txn_global->metadata_pinned;
     prev_oldest_id = txn_global->oldest_id;
-
+    // reading here 2020-11-26-17:24
     /* Try to move the pinned timestamp forward. */
     if (strict)
         WT_RET(__wt_txn_update_pinned_timestamp(session, false));

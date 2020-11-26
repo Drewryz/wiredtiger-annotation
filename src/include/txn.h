@@ -327,7 +327,10 @@ struct __wt_txn {
     /* Requested notification when transactions are resolved. */
     WT_TXN_NOTIFY *notify; // 应该是回调函数
 
-    // TODO: txn, checkpoint, redo log，三者之间什么关系？
+    /*
+     *  ckpt_lsn表示checkpoint起始lsn，参考__wt_txn_checkpoint_log
+     */
+
     /* Checkpoint status. */
     WT_LSN ckpt_lsn;
     uint32_t ckpt_nsnapshot;

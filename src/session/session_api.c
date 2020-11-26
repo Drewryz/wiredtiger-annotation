@@ -1926,6 +1926,10 @@ err:
 }
 
 /*
+ * 既然checkpoint是在session层被调用，那从一个方面说明了，对于wt来说，每个表都有自己的checkpoint 
+ */
+
+/*
  * __session_checkpoint --
  *     WT_SESSION->checkpoint method.
  */

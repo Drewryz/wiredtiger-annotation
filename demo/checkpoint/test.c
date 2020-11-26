@@ -40,7 +40,7 @@ void insert_one_record(WT_CONNECTION *conn, const char* table_name) {
     while((ret = cursor->next(cursor)) == 0) {
         cursor->get_key(cursor, &key_tmp);
         cursor->get_value(cursor, &value_tmp);
-        printf("Got record: %s : %s\n", key_tmp, value_tmp);
+        printf("From %s got record: %s : %s\n", table_name, key_tmp, value_tmp);
     }
     cursor->close(cursor);
     session->checkpoint(session, NULL);

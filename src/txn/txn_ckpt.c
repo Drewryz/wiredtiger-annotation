@@ -107,7 +107,7 @@ __checkpoint_update_generation(WT_SESSION_IMPL *session)
 
 /*
  * __checkpoint_apply_all --
- *     Apply an operation to all files involved in a checkpoint.
+ *     Apply an operation to all files involved in a checkpoint. 对checkpoint的一些配置做操作，跳过。
  */
 static int
 __checkpoint_apply_all(
@@ -212,6 +212,13 @@ __checkpoint_data_source(WT_SESSION_IMPL *session, const char *cfg[])
 {
     WT_DATA_SOURCE *dsrc;
     WT_NAMED_DATA_SOURCE *ndsrc;
+
+    /*
+     * wt的data source，参见：http://source.wiredtiger.com/3.2.1/custom_data_sources.html
+     * data source功能适用于用户自定义的数据源，跳过。
+     * 所以，这个函数整体上来说是对用户自定义的数据源做checkpoint。
+     * 一般来说，&S2C(session)->dsrcqh这个队列的长度为0
+     */
 
     /*
      * A place-holder, to support data sources: we assume calling the underlying data-source session
@@ -335,6 +342,13 @@ __wt_checkpoint_get_handles(WT_SESSION_IMPL *session, const char *cfg[])
 }
 
 /*
+ * 这个函数的用意是在checkpoint之前，先刷一波脏数据。
+ * 所以主要的目的是为了缩短真正做checkpoint时的时间？
+ * 因为在做checkpoint的时候会上锁吗？ 
+ * 关于eviction_checkpoint_target配置项，参见：http://source.wiredtiger.com/3.2.1/struct_w_t___c_o_n_n_e_c_t_i_o_n.html
+ */
+
+/*
  * __checkpoint_reduce_dirty_cache --
  *     Release clean trees from the list cached for checkpoints.
  */
@@ -387,6 +401,10 @@ __checkpoint_reduce_dirty_cache(WT_SESSION_IMPL *session)
 
         prev_dirty = current_dirty;
         current_dirty = (100.0 * __wt_cache_dirty_leaf_inuse(cache)) / cache_size;
+        /*
+         * 如果刷脏达到目标跳出
+         * 如果脏数据越来越多也跳出。。。。 
+         */
         if (current_dirty <= cache->eviction_checkpoint_target || current_dirty >= prev_dirty)
             break;
 
@@ -725,6 +743,18 @@ __txn_checkpoint_can_skip(
 }
 
 /*
+ * 该函数是checkpoint的核心函数。
+ * 关于checkpoint api，参见：http://source.wiredtiger.com/3.2.1/struct_w_t___s_e_s_s_i_o_n.html#a6550c9079198955c5071583941c85bbf 
+ * 该函数主要做了下面一些事情：
+ * 1. 如果不必要做checkpoint则跳过
+ * 2. 根据cfg，配置checkpoint的参数，参考__checkpoint_apply_all
+ * 3. 扫描事务列表，更新全局事务管理器状态，参考__wt_txn_update_oldest，TODO: why?
+ * 4. 对用于自定义的数据源做checkpoint，参考__checkpoint_data_source
+ * 5. 刷一波脏，将脏数据降到配置的目标值以下。 TOOD: 为什么要提前刷脏呢？？？
+ */
+
+
+/*
  * __txn_checkpoint --
  *     Checkpoint a database or a list of objects in the database.
  */
@@ -750,6 +780,10 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
     saved_isolation = session->isolation;
     full = idle = logging = tracking = use_timestamp = false;
 
+    /*
+     * full=true: 表示对database所有对象做checkpoint 
+     */
+
     /* Avoid doing work if possible. */
     WT_RET(__txn_checkpoint_can_skip(session, cfg, &full, &use_timestamp, &can_skip));
     if (can_skip) {
@@ -757,8 +791,10 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
         return (0);
     }
 
+    // reading here. 2020-11-26-15:55
     /*
      * Do a pass over the configuration arguments and figure out what kind of checkpoint this is.
+     * 传递配置参数并找出这是什么类型的检查点。
      */
     WT_RET(__checkpoint_apply_all(session, cfg, NULL));
 
@@ -775,9 +811,10 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
     conn->ckpt_write_bytes = 0;
     conn->ckpt_write_pages = 0;
 
+    // reading here. 2020-11-26-17:24
     /*
      * Update the global oldest ID so we do all possible cleanup.
-     *
+     * 这个函数用于更新全局事务管理器的状态，没有细看
      * This is particularly important for compact, so that all dirty pages can be fully written.
      */
     WT_ERR(__wt_txn_update_oldest(session, WT_TXN_OLDEST_STRICT | WT_TXN_OLDEST_WAIT));
@@ -794,7 +831,7 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
     /* Tell logging that we are about to start a database checkpoint. */
     if (full && logging)
         WT_ERR(__wt_txn_checkpoint_log(session, full, WT_TXN_LOG_CKPT_PREPARE, NULL));
-
+    // TODO: reading here. 2020-11-26-21:15
     __checkpoint_verbose_track(session, "starting transaction");
 
     if (full)
@@ -1046,6 +1083,7 @@ __txn_checkpoint_wrapper(WT_SESSION_IMPL *session, const char *cfg[])
     return (ret);
 }
 
+// ret = __wt_txn_checkpoint(session, cfg, true);
 /*
  * __wt_txn_checkpoint --
  *     Checkpoint a database or a list of objects in the database.
@@ -1056,6 +1094,7 @@ __wt_txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[], bool waiting)
     WT_DECL_RET;
     uint32_t orig_flags;
 
+    // reading here. 2020-11-26-15:10
     /*
      * Reset open cursors. Do this explicitly, even though it will happen implicitly in the call to
      * begin_transaction for the checkpoint, the checkpoint code will acquire the schema lock before
@@ -1068,6 +1107,7 @@ __wt_txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[], bool waiting)
 
 /*
  * Don't highjack the session checkpoint thread for eviction.
+ * 不要为了eviction而劫持session checkpoint 线程 ？？？？？
  *
  * Application threads are not generally available for potentially slow operations, but checkpoint
  * does enough I/O it may be called upon to perform slow operations for the block manager.
@@ -1086,6 +1126,10 @@ __wt_txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[], bool waiting)
     orig_flags = F_MASK(session, WT_CHECKPOINT_SESSION_FLAGS | WT_CHECKPOINT_SESSION_FLAGS_OFF);
     F_SET(session, WT_CHECKPOINT_SESSION_FLAGS);
     F_CLR(session, WT_CHECKPOINT_SESSION_FLAGS_OFF);
+
+    /*
+     * 同一时刻只能执行一个checkpoint 
+     */
 
     /*
      * Only one checkpoint can be active at a time, and checkpoints must run in the same order as

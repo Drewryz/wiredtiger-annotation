@@ -434,6 +434,7 @@ __wt_txn_ts_log(WT_SESSION_IMPL *session)
       commit, durable, first, prepare, read));
 }
 
+// WT_ERR(__wt_txn_checkpoint_log(session, full, WT_TXN_LOG_CKPT_PREPARE, NULL));
 /*
  * __wt_txn_checkpoint_log --
  *     Write a log record for a checkpoint operation.
@@ -497,6 +498,8 @@ __wt_txn_checkpoint_log(WT_SESSION_IMPL *session, bool full, uint32_t flags, WT_
          * We take and immediately release the visibility lock. Acquiring the write lock guarantees
          * that any transaction that has written to the log has also made its transaction visible at
          * this time.
+         * 获取写锁可以保证已经写入日志的任何事务在此时也能使其事务可见。 ？？？
+         * TODO: 这里的visibility_rwlock作用是什么？
          */
         __wt_writelock(session, &txn_global->visibility_rwlock);
         __wt_writeunlock(session, &txn_global->visibility_rwlock);
