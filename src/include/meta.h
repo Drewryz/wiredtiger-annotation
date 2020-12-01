@@ -133,6 +133,9 @@ struct __wt_ckpt {
     uint64_t newest_stop_txn;
 
     WT_ITEM addr; /* Checkpoint cookie string */
+    /*
+     * raw记录了ckpt的数据，参见__wt_block_buffer_to_ckpt
+     */
     WT_ITEM raw;  /* Checkpoint cookie raw */
 
     void *bpriv; /* Block manager private */

@@ -916,6 +916,7 @@ __wt_block_extlist_merge(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_EXTLIST *
 /*
  * __block_append --
  *     Append a new entry to the allocation list.
+ * WT_ERR(func(session, block, el, off, size));
  */
 static int
 __block_append(
@@ -1130,6 +1131,7 @@ err:
 /*
  * __wt_block_extlist_read --
  *     Read an extent list.
+ * WT_RET(__wt_block_extlist_read(session, block, &ci->alloc, ci->file_size));
  */
 int
 __wt_block_extlist_read(
@@ -1147,6 +1149,7 @@ __wt_block_extlist_read(
 
     // 每个session有WT_ITEM缓冲区，从session中获取一个WT_ITEM
     WT_RET(__wt_scr_alloc(session, el->size, &tmp));
+    // 读extent_list到tmp缓冲区中
     WT_ERR(__wt_block_read_off(session, block, tmp, el->offset, el->size, el->checksum));
 
     p = WT_BLOCK_HEADER_BYTE(tmp->mem);

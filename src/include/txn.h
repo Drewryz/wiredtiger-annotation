@@ -105,7 +105,7 @@ struct __wt_named_snapshot {
 struct __wt_txn_state {
     WT_CACHE_LINE_PAD_BEGIN
     volatile uint64_t id; // 事务id
-    volatile uint64_t pinned_id; // TODO: 表示什么？
+    volatile uint64_t pinned_id; // 表示checkpoint事务启动时的snap_min
     volatile uint64_t metadata_pinned;
     volatile bool is_allocating; // 是否正在初始化？
 

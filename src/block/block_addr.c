@@ -172,6 +172,8 @@ __block_buffer_to_ckpt(
 /*
  * __wt_block_buffer_to_ckpt --
  *     Convert a checkpoint cookie into its components, block manager version.
+ *     WT_RET(__wt_block_buffer_to_ckpt(session, block, ckpt->raw.data, ci));
+ * p: checkpoint cookie
  */
 int
 __wt_block_buffer_to_ckpt(

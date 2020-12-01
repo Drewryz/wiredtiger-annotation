@@ -238,7 +238,7 @@ __wt_block_checkpoint(
     if (buf == NULL) {
         ci->root_offset = WT_BLOCK_INVALID_OFFSET;
         ci->root_size = ci->root_checksum = 0;
-    } else // TODO: 这里的意思是buf存的是checkpoint信息吗
+    } else // buf是新的root page，将root page写入磁盘，返回root page的大小（size），在文件中的位置（offset），校验和（checksum）
         WT_ERR(__wt_block_write_off(session, block, buf, &ci->root_offset, &ci->root_size,
           &ci->root_checksum, data_checksum, true, false));
 
@@ -262,8 +262,15 @@ err:
 }
 
 /*
+ * WT_ERR(__ckpt_extlist_read(session, block, ckpt));
  * __ckpt_extlist_read --
  *     Read a checkpoints extent lists and copy
+ * 传入参数：
+ * block：实际的数据文件
+ * ckpt：从session层、b tree层，传入的ckpt
+ * 该函数主要行为：
+ * 1. 新建WT_BLOCK_CKPT结构体记为ci并初始化，接下来读到的数据都放到这个结构体中
+ * 2. 读ckpt三个列表的信息(offset, size, checksum)到ci
  */
 static int
 __ckpt_extlist_read(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_CKPT *ckpt)
@@ -284,6 +291,7 @@ __ckpt_extlist_read(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_CKPT *ckpt)
     ci = ckpt->bpriv;
     WT_RET(__wt_block_ckpt_init(session, ci, ckpt->name));
     WT_RET(__wt_block_buffer_to_ckpt(session, block, ckpt->raw.data, ci));
+    // 将ci->alloc的数据从磁盘上读出, 并在内存中构建WT_EXTLIST
     WT_RET(__wt_block_extlist_read(session, block, &ci->alloc, ci->file_size));
     WT_RET(__wt_block_extlist_read(session, block, &ci->discard, ci->file_size));
 
@@ -408,6 +416,10 @@ __ckpt_add_blk_mods_alloc(WT_SESSION_IMPL *session, WT_CKPT *ckptbase, WT_BLOCK_
         if (F_ISSET(ckpt, WT_CKPT_ADD))
             break;
     }
+    /*
+     * ckpt指向live tree 
+     */
+    // reading here
     /* If this is not the live checkpoint or we don't care about incremental blocks, we're done. */
     if (ckpt == NULL || !F_ISSET(ckpt, WT_CKPT_BLOCK_MODS))
         return (0);
@@ -530,12 +542,18 @@ __ckpt_process(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_CKPT *ckptbase)
      * not because they're needed at that time, but because it's potentially a lot of work, and
      * waiting allows the btree layer to continue eviction sooner. As for the checkpoint-available
      * list, make sure they get cleaned out.
+     * 
+     * 实在是看不懂这里的解释。checkpoint涉及到的模块实在是太多了。
      */
     __wt_block_extlist_free(session, &ci->ckpt_avail);
     WT_RET(__wt_block_extlist_init(session, &ci->ckpt_avail, "live", "ckpt_avail", true));
     __wt_block_extlist_free(session, &ci->ckpt_alloc);
     __wt_block_extlist_free(session, &ci->ckpt_discard);
 
+    // reading here. 2020-11-30-12:10
+    /*
+     * 下面这个循环将除了live tree之外的checkpoint三个列表从磁盘中读出来
+     */
     /*
      * To delete a checkpoint, we'll need checkpoint information for it and the subsequent
      * checkpoint into which it gets rolled; read them from disk before we lock things down.
@@ -630,6 +648,9 @@ __ckpt_process(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_CKPT *ckptbase)
             b = next_ckpt->bpriv;
 
         /*
+         * 这里的释放根页：将root page放到discard list中 
+         */
+        /*
          * Free the root page: there's nothing special about this free, the root page is allocated
          * using normal rules, that is, it may have been taken from the avail list, and was entered
          * on the live system's alloc list at that time. We free it into the checkpoint's discard
@@ -644,14 +665,19 @@ __ckpt_process(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_CKPT *ckptbase)
          * Free the blocks used to hold the "from" checkpoint's extent lists, including the avail
          * list.
          */
+        /*
+         * alloc list, avail list, discard list，本身就是数据，它们在磁盘上占有空间，下面的代码是将list本身占用的block释放 
+         */
         WT_ERR(__ckpt_extlist_fblocks(session, block, &a->alloc));
         WT_ERR(__ckpt_extlist_fblocks(session, block, &a->avail));
         WT_ERR(__ckpt_extlist_fblocks(session, block, &a->discard));
 
+        // 将上一个checkpint的alloc_list和discard_list merge到当前checkpoint中
         /*
          * Roll the "from" alloc and discard extent lists into the "to" checkpoint's lists.
          */
         if (a->alloc.entries != 0)
+            // TODO: !!!! 这里为啥可以直接将a的alloc merge 到 b中
             WT_ERR(__wt_block_extlist_merge(session, block, &a->alloc, &b->alloc));
         if (a->discard.entries != 0)
             WT_ERR(__wt_block_extlist_merge(session, block, &a->discard, &b->discard));
@@ -693,7 +719,7 @@ __ckpt_process(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_CKPT *ckptbase)
     WT_CKPT_FOREACH (ckptbase, ckpt)
         if (F_ISSET(ckpt, WT_CKPT_UPDATE))
             WT_ERR(__ckpt_update(session, block, ckptbase, ckpt, ckpt->bpriv));
-
+    // reading here. 2020-11-30-17:13
 live_update:
     /* Truncate the file if that's possible. */
     WT_ERR(__wt_block_extlist_truncate(session, block, &ci->avail));

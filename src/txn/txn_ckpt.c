@@ -549,6 +549,9 @@ __checkpoint_prepare(WT_SESSION_IMPL *session, bool *trackingp, const char *cfg[
     use_timestamp = (cval.val != 0);
 
     /*
+     * 做checkpoint会首先启动一个内部事务 
+     */
+    /*
      * Start a snapshot transaction for the checkpoint.
      *
      * Note: we don't go through the public API calls because they have side effects on cursors,
@@ -561,6 +564,9 @@ __checkpoint_prepare(WT_SESSION_IMPL *session, bool *trackingp, const char *cfg[
     /* Ensure a transaction ID is allocated prior to sharing it globally */
     WT_RET(__wt_txn_id_check(session));
 
+    /*
+     * ？？？？？ 
+     */
     /* Keep track of handles acquired for locking. */
     WT_RET(__wt_meta_track_on(session));
     *trackingp = true;
@@ -587,7 +593,7 @@ __checkpoint_prepare(WT_SESSION_IMPL *session, bool *trackingp, const char *cfg[
      * time and only write to the metadata.
      */
     __wt_writelock(session, &txn_global->rwlock);
-    txn_global->checkpoint_state = *txn_state;
+    txn_global->checkpoint_state = *txn_state; // 按值复制
     txn_global->checkpoint_state.pinned_id = txn->snap_min;
 
     /*
@@ -751,8 +757,8 @@ __txn_checkpoint_can_skip(
  * 3. 扫描事务列表，更新全局事务管理器状态，参考__wt_txn_update_oldest，TODO: why?
  * 4. 对用于自定义的数据源做checkpoint，参考__checkpoint_data_source
  * 5. 刷一波脏，将脏数据降到配置的目标值以下。 TOOD: 为什么要提前刷脏呢？？？
+ * 6. 向WAL log写一条日志：WT_TXN_LOG_CKPT_PREPARE
  */
-
 
 /*
  * __txn_checkpoint --
@@ -828,6 +834,11 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
      */
     __checkpoint_reduce_dirty_cache(session);
 
+
+    /*
+     * 直到下面这行代码，checkpoint才正式开始 
+     */
+
     /* Tell logging that we are about to start a database checkpoint. */
     if (full && logging)
         WT_ERR(__wt_txn_checkpoint_log(session, full, WT_TXN_LOG_CKPT_PREPARE, NULL));
@@ -879,9 +890,9 @@ __txn_checkpoint(WT_SESSION_IMPL *session, const char *cfg[])
     /* Tell logging that we have started a database checkpoint. */
     if (full && logging)
         WT_ERR(__wt_txn_checkpoint_log(session, full, WT_TXN_LOG_CKPT_START, NULL));
-
+    // reading here. 2020-11-27-16:36
     __checkpoint_timing_stress(session);
-
+    // reading here. 2020-11-27-17:25
     WT_ERR(__checkpoint_apply(session, cfg, __checkpoint_tree_helper));
 
     /*
@@ -1646,6 +1657,7 @@ fake:
     if (WT_IS_METADATA(dhandle) || !F_ISSET(&session->txn, WT_TXN_RUNNING))
         WT_ERR(__wt_checkpoint_sync(session, NULL));
 
+    // reading here. 2020-11-28-18:32
     WT_ERR(__wt_meta_ckptlist_set(session, dhandle->name, btree->ckpt, &ckptlsn));
 
     /*

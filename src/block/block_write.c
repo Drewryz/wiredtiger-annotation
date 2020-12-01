@@ -379,6 +379,9 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
     return (0);
 }
 
+
+// WT_ERR(__wt_block_write_off(session, block, buf, &ci->root_offset, &ci->root_size,
+//   &ci->root_checksum, data_checksum, true, false));
 /*
  * __wt_block_write_off --
  *     Write a buffer into a block, returning the block's offset, size and checksum.

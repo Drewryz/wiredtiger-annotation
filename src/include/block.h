@@ -41,7 +41,13 @@
  * list, the alloc and discard extent lists are not searched based on size.
  */
 
-// segment -> extent -> page || 段 -> 区 -> 页
+/* 
+ * 在磁盘上的extent_list起存储的数据应该是这样的：
+ *  -------------------------------------------------------------------
+ * |  offset, size  |  offset, size  |  offset, size  |  offset, size  |     
+ *  -------------------------------------------------------------------
+ *       extent1         extent2          extent3           extent4
+ */
 /*
  * WT_EXTLIST --
  *	An extent list.
