@@ -36,16 +36,16 @@ struct __wt_cursor_backup {
     WT_CURSOR iface;
 
     size_t next;     /* Cursor position */
-    WT_FSTREAM *bfs; /* Backup file stream */
+    WT_FSTREAM *bfs; /* Backup file stream */ // ????
 
 #define WT_CURSOR_BACKUP_ID(cursor) (((WT_CURSOR_BACKUP *)(cursor))->maxid)
-    uint32_t maxid; /* Maximum log file ID seen */
+    uint32_t maxid; /* Maximum log file ID seen */ /* 如果logging使能，backup需要logging系统参与 */
 
-    char **list; /* List of files to be copied. */
+    char **list; /* List of files to be copied. */ /* backup开始后会填充该表，表示需要备份(拷贝)的文件 */
     size_t list_allocated;
     size_t list_next;
 
-    /* File offset-based incremental backup. */
+    /* File offset-based incremental backup. */ /* 基于文件偏移的增量备份？？？ */
     WT_BLKINCR *incr_src; /* Incremental backup source */
     char *incr_file;      /* File name */
 

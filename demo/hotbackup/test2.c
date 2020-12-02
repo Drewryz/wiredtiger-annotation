@@ -62,7 +62,8 @@ int main() {
     WT_CURSOR *cursor;
     int ret;
     const char *db_home = "db_home";
-    const char *config = "create,log=(enabled=true,archive=false)";
+    // const char *config = "create,log=(enabled=true,archive=false)";
+    const char *config = "create";
     wiredtiger_open(db_home, NULL, config, &conn);
     WT_SESSION *session;
     conn->open_session(conn, NULL, NULL, &session);
@@ -82,9 +83,14 @@ int main() {
     cursor->insert(cursor);
 
     /*
+     * 如果采用这个配置：const char *config = "create,log=(enabled=true,archive=false)"
      * 原表先插入key1:val1, 然后做checkpoint， 最后再插入key2:val2
-     * 备份表可以读到key1:val1与key2:val2, 表明wt的备份不是通过最近的checkpoint来完成的
-     * 具体做法看代码吧
+     * 备份表可以读到key1:val1与key2:val2
+     * 
+     * 如果采用这个配置：const char *config = "create"
+     * 备份表只可以读到key1:val1
+     * 
+     * 结论：wt的热备通过checkpoint与WAL一起联动的形式完成
      */
 
     cout << "backup..." << endl;

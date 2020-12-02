@@ -219,7 +219,7 @@ err:
         F_CLR(session, WT_SESSION_BACKUP_DUP);
         F_CLR(cb, WT_CURBACKUP_DUP);
     } else if (F_ISSET(cb, WT_CURBACKUP_LOCKER))
-        WT_TRET(__backup_stop(session, cb));
+        WT_TRET(__backup_stop(session, cb)); // reading here.
 
     __wt_cursor_close(cursor);
     session->bkp_cursor = NULL;
@@ -230,6 +230,11 @@ err:
 /*
  * __wt_curbackup_open --
  *     WT_SESSION->open_cursor method for the backup cursor type.
+ * uri: "backup:"
+ * other: NULL
+ * cfg: "append=false,bulk=false,checkpoint=,checkpoint_wait=true,dump=,incremental=(enabled=false,file=,force_stop=false,granularity=16MB,src_id=,this_id=),next_ra
+ndom=false,next_random_sample_size=0,overwrite=true,raw=false,read_once=false,readonly=false,skip_sort_check=false,statistics=,target="
+ * cursorp: 输出参数
  */
 int
 __wt_curbackup_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *other, const char *cfg[],
@@ -264,6 +269,7 @@ __wt_curbackup_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *other,
     WT_RET(__wt_calloc_one(session, &cb));
     cursor = (WT_CURSOR *)cb;
     *cursor = iface;
+    // reading here. 2020-12-1-17:38
     cursor->session = (WT_SESSION *)session;
     cursor->key_format = "S";  /* Return the file names as the key. */
     cursor->value_format = ""; /* No value, for now. */
@@ -649,7 +655,8 @@ __backup_start(
          * checkpoint.
          *
          * We are holding the checkpoint and schema locks so schema operations will not see the
-         * backup file list until it is complete and valid.
+         * backup file list until it is complete and valid. ????
+         * schema operations表示什么？
          */
         WT_WITH_HOTBACKUP_WRITE_LOCK(session, WT_CONN_HOTBACKUP_START(conn));
 
@@ -670,7 +677,11 @@ __backup_start(
      * If targets were specified, add them to the list. Otherwise it is a full backup, add all
      * database objects and log files to the list.
      */
+    // reading here. 2020-12-2-11:48
     target_list = false;
+    /*
+     * 配置backup，一般来说target_list, log_only, is_incr三个输出参数都为false
+     */
     WT_ERR(__backup_config(session, cb, cfg, othercb, &target_list, &log_only, &is_incr));
     /*
      * For a duplicate cursor, all the work is done in backup_config.
@@ -680,7 +691,7 @@ __backup_start(
         F_SET(session, WT_SESSION_BACKUP_DUP);
         goto done;
     }
-    if (!target_list) {
+    if (!target_list) { // 如果是全量备份
         /*
          * It's important to first gather the log files to be copied
          * (which internally starts a new log file), followed by
@@ -697,7 +708,7 @@ __backup_start(
          * checkpoint, but not include the log file that contains the
          * log entry for taking the new checkpoint.
          */
-        WT_ERR(__backup_log_append(session, cb, true));
+        WT_ERR(__backup_log_append(session, cb, true)); /* 先将WAL文件放入List中 */
         WT_ERR(__backup_all(session));
     }
 
@@ -786,7 +797,7 @@ __backup_stop(WT_SESSION_IMPL *session, WT_CURSOR_BACKUP *cb)
  *     Backup all objects in the database.
  */
 static int
-__backup_all(WT_SESSION_IMPL *session)
+ __backup_all(WT_SESSION_IMPL *session)
 {
     /* Build a list of the file objects that need to be copied. */
     return (__wt_meta_apply_all(session, NULL, __backup_list_uri_append, NULL));

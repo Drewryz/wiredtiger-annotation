@@ -17,7 +17,17 @@
 /*
  * Backup related WiredTiger files.
  */
-#define WT_BACKUP_TMP "WiredTiger.backup.tmp"  /* Backup tmp file */
+#define WT_BACKUP_TMP "WiredTiger.backup.tmp"  /* Backup tmp file */ /* 如果backup成功，wt会将WT_BACKUP_TMP重新命名为WT_METADATA_BACKUP */
+/*
+ * 做热备时，会将系统文件或者数据文件的名字放入WiredTiger.backup中：
+ * [root@9ce135f89f25 backup]# cat WiredTiger.backup
+ * colgroup:my_table
+ * app_metadata=,collator=,columns=,source="file:my_table.wt",type=file
+ * file:my_table.wt
+ * access_pattern_hint=none,allocation_size=4KB,app_metadata=,assert=(commit_timestamp=none,durable_timestamp=none,read_timestamp=none),block_allocation=best,block_compressor=,cache_resident=false,checksum=uncompressed,collator=,columns=,dictionary=0,encryption=(keyid=,name=),format=btree,huffman_key=,huffman_value=,id=2,ignore_in_memory_cache_size=false,internal_item_max=0,internal_key_max=0,internal_key_truncate=true,internal_page_max=4KB,key_format=S,key_gap=10,leaf_item_max=0,leaf_key_max=0,leaf_page_max=32KB,leaf_value_max=0,log=(enabled=true),memory_page_image_max=0,memory_page_max=5MB,os_cache_dirty_max=0,os_cache_max=0,prefix_compression=false,prefix_compression_min=4,split_deepen_min_child=0,split_deepen_per_child=0,split_pct=90,value_format=S,version=(major=1,minor=1),checkpoint=(WiredTigerCheckpoint.1=(addr="018181e441ecd5f48281e41546bd168381e420dfb8a9808080e22fc0cfc0",order=1,time=1606892435,size=8192,newest_durable_ts=0,oldest_start_ts=0,oldest_start_txn=0,newest_stop_ts=-1,newest_stop_txn=-11,write_gen=2)),checkpoint_backup_info=,checkpoint_lsn=(1,3072)
+ * table:my_table
+ * app_metadata=,colgroups=,collator=,columns=,key_format=S,value_format=S
+ */
 #define WT_METADATA_BACKUP "WiredTiger.backup" /* Hot backup file */
 #define WT_LOGINCR_BACKUP "WiredTiger.ibackup" /* Log incremental backup */
 #define WT_LOGINCR_SRC "WiredTiger.isrc"       /* Log incremental source */

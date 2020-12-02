@@ -1050,6 +1050,7 @@ __wt_cursor_dup_position(WT_CURSOR *to_dup, WT_CURSOR *cursor)
 /*
  * __wt_cursor_init --
  *     Default cursor initialization.
+ *     __wt_cursor_init(cursor, uri, NULL, cfg, cursorp) :
  */
 int
 __wt_cursor_init(

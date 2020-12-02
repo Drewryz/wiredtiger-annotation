@@ -65,6 +65,7 @@ __meta_btree_apply(WT_SESSION_IMPL *session, WT_CURSOR *cursor,
 /*
  * __wt_meta_apply_all --
  *     Apply a function to all files listed in the metadata, apart from the metadata file.
+ *     return (__wt_meta_apply_all(session, NULL, __backup_list_uri_append, NULL));
  */
 int
 __wt_meta_apply_all(WT_SESSION_IMPL *session, int (*file_func)(WT_SESSION_IMPL *, const char *[]),
