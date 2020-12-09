@@ -43,12 +43,12 @@ int main() {
     cursor->insert(cursor);
     printf("Inserting is success?\n");
     iterate_cursor(cursor);
-    printf("Delete a record.\n");
-    cursor->reset(cursor);
-    cursor->set_key(cursor, "key1");
-    cursor->remove(cursor);
-    printf("Deleting is success?\n");
-    iterate_cursor(cursor);
-    sleep(60);
+    // printf("Delete a record.\n");
+    // cursor->reset(cursor);
+    // cursor->set_key(cursor, "key1");
+    // cursor->remove(cursor);
+    // printf("Deleting is success?\n");
+    // iterate_cursor(cursor);
+    // sleep(60);
     conn->close(conn, NULL);
 }

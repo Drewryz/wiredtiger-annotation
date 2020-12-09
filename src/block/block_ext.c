@@ -65,7 +65,8 @@ __block_off_srch(WT_EXT **head, wt_off_t off, WT_EXT ***stack, bool skip_off)
     /*
      * Start at the highest skip level, then go as far as possible at each level before stepping
      * down to the next.
-     *
+     * 
+     * !!!注意这句注释!!!
      * Return a stack for an exact match or the next-largest item.
      *
      * The WT_EXT structure contains two skiplists, the primary one and the per-size bucket one: if
@@ -81,12 +82,16 @@ __block_off_srch(WT_EXT **head, wt_off_t off, WT_EXT ***stack, bool skip_off)
 
 /*
  * __block_first_srch --
- *     Search the skiplist for the first available slot.
+ *     Search the skiplist for the first available slot. 找不到返回false
+ *         if (!__block_first_srch(block->live.avail.off, size, estack))
  */
 static inline bool
 __block_first_srch(WT_EXT **head, wt_off_t size, WT_EXT ***stack)
 {
     WT_EXT *ext;
+
+    // #define WT_EXT_FOREACH(skip, head) \
+    // for ((ext) = (head)[0]; (ext) != NULL; (ext) = (ext)->next[0])
 
     /*
      * Linear walk of the available chunks in offset order; take the first one that's large enough.
@@ -97,6 +102,7 @@ __block_first_srch(WT_EXT **head, wt_off_t size, WT_EXT ***stack)
     if (ext == NULL)
         return (false);
 
+    // 这有有一个问题，找到ext后可以直接返回，为什么还要多次一句，搜索跳表？？？
     /* Build a stack for the offset we want. */
     __block_off_srch(head, ext->off, stack, false);
     return (true);
@@ -529,7 +535,7 @@ __wt_block_alloc(WT_SESSION_IMPL *session, WT_BLOCK *block, wt_off_t *offp, wt_o
     // 先从可用链表中获取
     if (block->live.avail.bytes < (uint64_t)size) 
         goto append;
-    if (block->allocfirst) {
+    if (block->allocfirst) { // 不考虑size最优化，找到大于size的block就返回
         if (!__block_first_srch(block->live.avail.off, size, estack))
             goto append;
         ext = *estack[0];
@@ -546,6 +552,11 @@ append:
         ext = szp->off[0];
     }
 
+    /*
+     * 以下逻辑操作avail链表 
+     */
+
+    // reading here. 2020-12-9-21:32
     /* Remove the record, and set the returned offset. */
     WT_RET(__block_off_remove(session, block, &block->live.avail, ext->off, &ext));
     *offp = ext->off;
@@ -917,6 +928,9 @@ __wt_block_extlist_merge(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_EXTLIST *
  * __block_append --
  *     Append a new entry to the allocation list.
  * WT_ERR(func(session, block, el, off, size));
+ *             WT_RET(__block_append(session, block, &block->live.alloc, *offp, (wt_off_t)size));
+ * off,size: 需要被append的off和size
+ * 将(off, size)代表的block，append到ext_list末尾
  */
 static int
 __block_append(
@@ -936,13 +950,13 @@ __block_append(
      * The terminating element of the list is cached, check it; otherwise, get a stack for the last
      * object in the skiplist, check for a simple extension, and otherwise append a new structure.
      */
-    if ((ext = el->last) != NULL && ext->off + ext->size == off)
+    if ((ext = el->last) != NULL && ext->off + ext->size == off) // 最后一个ext的off+size刚好等于新的block的off，那就直接将新的block融合到最后的ext中
         ext->size += size;
     else {
-        ext = __block_off_srch_last(el->off, astack);
+        ext = __block_off_srch_last(el->off, astack); // reading here.
         if (ext != NULL && ext->off + ext->size == off)
             ext->size += size;
-        else {
+        else { // 跳表为空
             WT_RET(__wt_block_ext_alloc(session, &ext));
             ext->off = off;
             ext->size = size;

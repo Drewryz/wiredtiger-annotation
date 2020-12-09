@@ -56,7 +56,7 @@ struct __wt_extlist {
     char *name; /* Name */
 
     uint64_t bytes;   /* Byte count */
-    uint32_t entries; /* Entry count */
+    uint32_t entries; /* Entry count */ /* 有多少个extent */
 
     wt_off_t offset;   /* Written extent offset */
     uint32_t checksum; /* Written extent checksum */
@@ -66,7 +66,7 @@ struct __wt_extlist {
 
     WT_EXT *last; /* Cached last element */
 
-    WT_EXT *off[WT_SKIP_MAXDEPTH]; /* Size/offset skiplists */
+    WT_EXT *off[WT_SKIP_MAXDEPTH]; /* Size/offset skiplists */ /* 跳表这么表示没有错 */
     WT_SIZE *sz[WT_SKIP_MAXDEPTH];
 };
 
@@ -81,12 +81,17 @@ struct __wt_ext {
 
     uint8_t depth; /* Skip list depth */
 
+
+    /* 
+     * 每个ext节点有两个深度数组第一个应该是正常的跳表next值，第二个暂时未知。参见：__block_ext_alloc
+     */
+
     /*
      * Variable-length array, sized by the number of skiplist elements. The first depth array
      * entries are the address skiplist elements, the second depth array entries are the size
      * skiplist.
      */
-    WT_EXT *next[0]; /* Offset, size skiplists */
+    WT_EXT *next[0]; /* Offset, size skiplists */ /* 每个跳表的节点都有多个指针，代表节点的高度 */
 };
 
 /*
@@ -145,14 +150,14 @@ struct __wt_size {
 #define WT_BLOCK_CHECKPOINT_BUFFER (1 + 14 * WT_INTPACK64_MAXSIZE)
 // (yangzaorang) 参见: https://mongoing.com/archives/73180
 // 该数据结构三个链表的元素是extent，wt数据在磁盘上的排列应该像下面这样：
-//  ----------------------------------------------------------------
-// |   page1   |    page2    |   page3   |    page4  |     page...  |
-//  ----------------------------------------------------------------
-//                             extent
+//  --------------------------------------------------     -------------------------------------------------
+// |   page1   |    page2    |   page3   |    page...  |  |   page1   |    page2    |   page3   |   page... |
+//  --------------------------------------------------     -------------------------------------------------
+//                        extent1                                                extent2
 struct __wt_block_ckpt {
     uint8_t version; /* Version */
 
-    wt_off_t root_offset; /* The root */
+    wt_off_t root_offset; /* The root */ /* 根页在文件中的偏移 */
     uint32_t root_checksum, root_size;
     
     WT_EXTLIST alloc;   /* Extents allocated */
@@ -215,6 +220,9 @@ struct __wt_bm {
 
     WT_BLOCK *block; /* Underlying file */
 
+    /*
+     * ？？？？ 
+     */
     void *map; /* Mapped region */
     size_t maplen;
     void *mapped_cookie;
@@ -238,13 +246,19 @@ struct __wt_block {
     TAILQ_ENTRY(__wt_block) q;     /* Linked list of handles */  // struct { struct __wt_block *tqe_next; struct __wt_block **tqe_prev; TRACEBUF }
     TAILQ_ENTRY(__wt_block) hashq; /* Hashed list of handles */  // struct { struct __wt_block *tqe_next; struct __wt_block **tqe_prev; TRACEBUF }
 
+    /*
+     * 关于extend与alloc, 参见：https://source.wiredtiger.com/3.2.1/tune_file_alloc.html 
+     */
     WT_FH *fh;            /* Backing file handle */
     wt_off_t size;        /* File size */
     wt_off_t extend_size; /* File extended size */
     wt_off_t extend_len;  /* File extend chunk size */
 
+    /*
+     * session->open参数，参见: http://source.wiredtiger.com/3.2.1/struct_w_t___s_e_s_s_i_o_n.html
+     */
     /* Configuration information, set when the file is opened. */
-    uint32_t allocfirst; /* Allocation is first-fit */ // block分配方式, 参见：https://source.wiredtiger.com/3.2.1/tune_file_alloc.html
+    uint32_t allocfirst; /* Allocation is first-fit */
     uint32_t allocsize;  /* Allocation size */ // 每次分配空间时的单位
     size_t os_cache;     /* System buffer cache flush max */
     size_t os_cache_max;
@@ -294,6 +308,14 @@ struct __wt_block {
     uint8_t *fragfile;       /* Per-file frag tracking list */
     uint8_t *fragckpt;       /* Per-checkpoint frag tracking list */
 }; // 磁盘上一个文件
+
+
+/*
+ * 数据文件结构
+ *  ---------------------- -------------------------------------------------------------------------
+ * |    WT_BLOCK_DESC     |     block data    |     block data    |   ......    |     block data    |
+ *  ---------------------- -------------------------------------------------------------------------
+ */
 
 /*
  * WT_BLOCK_DESC --
@@ -346,6 +368,16 @@ __wt_block_desc_byteswap(WT_BLOCK_DESC *desc)
 // https://mongoing.com/archives/29934
 // TODO: (yangzaorang) b树怎么存数据 <<数据结构与算法分析>>
 // WT_PAGE_HEADER | WT_BLOCK_HEADER
+
+
+/*
+ *  ------------------------------------------------------------------------------
+ * |     WT_PAGE_HEADER      |      WT_BLOCK_HEADER     |        data...          |
+ *  ------------------------------------------------------------------------------
+ * 
+ *  WT_PAGE_HEADER | WT_BLOCK_HEADER 
+ */
+
 /*
  * WT_BLOCK_HEADER --
  *	Blocks have a common header, a WT_PAGE_HEADER structure followed by a
