@@ -51,6 +51,12 @@ __block_off_srch_last(WT_EXT **head, WT_EXT ***stack)
     return (last);
 }
 
+
+/*
+ * 如果off刚好是一个节点的偏移，stack[]记录该节点的前置指针
+ * A->B->C
+ * 假设off代表B节点，那么stack记录&&B
+ */
 /*
  * __block_off_srch --
  *     Search a by-offset skiplist (either the primary by-offset list, or the by-offset list
@@ -74,9 +80,9 @@ __block_off_srch(WT_EXT **head, wt_off_t off, WT_EXT ***stack, bool skip_off)
      * structure.
      */
     for (i = WT_SKIP_MAXDEPTH - 1, extp = &head[i]; i >= 0;)
-        if (*extp != NULL && (*extp)->off < off)
-            extp = &(*extp)->next[i + (skip_off ? (*extp)->depth : 0)];
-        else
+        if (*extp != NULL && (*extp)->off < off) // 同层遍历
+            extp = &(*extp)->next[i + (skip_off ? (*extp)->depth : 0)]; 
+        else // 下降一层
             stack[i--] = extp--;
 }
 
@@ -108,6 +114,9 @@ __block_first_srch(WT_EXT **head, wt_off_t size, WT_EXT ***stack)
     return (true);
 }
 
+/*
+ * 参考__block_off_srch 
+ */
 /*
  * __block_size_srch --
  *     Search the by-size skiplist for the specified size.
@@ -332,7 +341,7 @@ __block_off_remove(
     ext = *astack[0];
     if (ext == NULL || ext->off != off)
         goto corrupt;
-    for (i = 0; i < ext->depth; ++i)
+    for (i = 0; i < ext->depth; ++i) // 这个循环将ext从跳表中去除
         *astack[i] = ext->next[i];
 
     /*
@@ -560,7 +569,7 @@ append:
     /* Remove the record, and set the returned offset. */
     WT_RET(__block_off_remove(session, block, &block->live.avail, ext->off, &ext));
     *offp = ext->off;
-
+    
     /* If doing a partial allocation, adjust the record and put it back. */
     if (ext->size > size) {
         __wt_verbose(session, WT_VERB_BLOCK,

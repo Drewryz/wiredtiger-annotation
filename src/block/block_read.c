@@ -50,8 +50,16 @@ __wt_bm_preload(WT_BM *bm, WT_SESSION_IMPL *session, const uint8_t *addr, size_t
 }
 
 /*
+ * 该函数流程：
+ * 1. 根据上层传入的block cookie，获取block在数据文件中的offset，size， checksum
+ *    WT有很多生僻的命名方式：）这里的cookie代表着通过可变长度编码的offset,size,checksum字节流。
+ *    对于block来说，WT将block的地址信息都用可变长度编码算法进行编码，主要的目的是为了节省存储空间。
+ * 2. 
+ */
+/*
  * __wt_bm_read --
  *     Map or read address cookie referenced block into a buffer.
+ * addr：传入的字节流，代表需要读取block的offset，size，checksum，采用可变长度编码的方式
  */
 int
 __wt_bm_read(
@@ -70,6 +78,8 @@ __wt_bm_read(
     /* Crack the cookie. */
     WT_RET(__wt_block_buffer_to_addr(block, addr, &offset, &size, &checksum));
 
+    // reading here. 2020-12-12-16:34
+    // 何时会进入这个逻辑
     /*
      * Map the block if it's possible.
      */

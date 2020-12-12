@@ -94,6 +94,35 @@ __bm_checkpoint_readonly(
     return (__bm_readonly(bm, session));
 }
 
+// __bm_checkpoint_load的一个调用栈
+// #0  __bm_checkpoint_load (bm=0x631b90, session=0x7ffff7fab010,
+//     addr=0x6324d0 "\001\205\201\344y\224\f0\206\201\344BA\a\264\207\201\344xW)\201\200\200\200\342o\300\317\300p_txn=-11,Q", addr_size=30,
+//     root_addr=0x7fffffffd560 "access_pattern_hone),block_allocread_timestamp=n_timestamp=none,amp=none,durableint=none,allocat", root_addr_sizep=0x7fffffffd660,
+//     checkpoint=false) at src/block/block_mgr.c:106
+// #1  0x00007ffff77e4f65 in __wt_btree_open (session=0x7ffff7fab010, op_cfg=0x7fffffffdb60) at src/btree/bt_handle.c:151
+// #2  0x00007ffff784ddee in __wt_conn_dhandle_open (session=0x7ffff7fab010, cfg=0x7fffffffdb60, flags=0) at src/conn/conn_dhandle.c:466
+// #3  0x00007ffff793ac3f in __wt_session_get_dhandle (session=0x7ffff7fab010, uri=0x7ffff7983d36 "file:WiredTiger.wt", checkpoint=0x0, cfg=0x7fffffffdb60, flags=0)
+//     at src/session/session_dhandle.c:504
+// #4  0x00007ffff793abe8 in __wt_session_get_dhandle (session=0x7ffff7fab010, uri=0x7ffff7983d36 "file:WiredTiger.wt", checkpoint=0x0, cfg=0x7fffffffdb60, flags=0)
+//     at src/session/session_dhandle.c:497
+// #5  0x00007ffff793a46c in __wt_session_get_btree_ckpt (session=0x7ffff7fab010, uri=0x7ffff7983d36 "file:WiredTiger.wt", cfg=0x7fffffffdb60, flags=0)
+//     at src/session/session_dhandle.c:320
+// #6  0x00007ffff7872094 in __wt_curfile_open (session=0x7ffff7fab010, uri=0x7ffff7983d36 "file:WiredTiger.wt", owner=0x0, cfg=0x7fffffffdb60, cursorp=0x7fffffffdbc0)
+//     at src/cursor/cur_file.c:805
+// #7  0x00007ffff7927e89 in __session_open_cursor_int (session=0x7ffff7fab010, uri=0x7ffff7983d36 "file:WiredTiger.wt", owner=0x0, other=0x0, cfg=0x7fffffffdb60,
+//     cursorp=0x7fffffffdbc0) at src/session/session_api.c:464
+// #8  0x00007ffff7928215 in __wt_open_cursor (session=0x7ffff7fab010, uri=0x7ffff7983d36 "file:WiredTiger.wt", owner=0x0, cfg=0x7fffffffdb60, cursorp=0x7fffffffdbc0)
+//     at src/session/session_api.c:528
+// #9  0x00007ffff78db7cd in __wt_metadata_cursor_open (session=0x7ffff7fab010, config=0x0, cursorp=0x7fffffffdbc0) at src/meta/meta_table.c:66
+// #10 0x00007ffff78db8e0 in __wt_metadata_cursor (session=0x7ffff7fab010, cursorp=0x0) at src/meta/meta_table.c:108
+// #11 0x00007ffff7846ea1 in wiredtiger_open (home=0x400978 "./wt_meta", event_handler=0x0, config=0x400940 "create,io_capacity=(total=40MB),file_extend=(data=16MB)",
+//     connectionp=0x7fffffffddd8) at src/conn/conn_api.c:2671
+// #12 0x0000000000400774 in main () at test_wt.c:34
+
+/*
+ * 从上面的调用栈来看，只有一个btree是readonly的时候，checkpoint参数才为true。
+ * 所以，wt的命名我真是服了。。。
+ */
 /*
  * __bm_checkpoint_load --
  *     Load a checkpoint.

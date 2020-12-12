@@ -84,6 +84,9 @@ __wt_block_discard(WT_SESSION_IMPL *session, WT_BLOCK *block, size_t added_size)
 }
 
 /*
+ * 用户配置了file_extend配置项，这个函数才会起作用，pass 
+ */
+/*
  * __wt_block_extend --
  *     Extend the file.
  */
@@ -205,13 +208,23 @@ __wt_block_write(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, uint8_
 }
 
 // 该函数完成了block指向的数据往磁盘写，主要步骤：
-// 1. 从 Live checkpoint的avaliable链表中，找到可用的extent，找不到则在文件末尾新分配空间
-// 2. 在找到的extent或者新分配的extent中，写入数据
+// 1. 从 Live checkpoint的avaliable表中，找到可用的block，找不到则在文件末尾新分配空间
+//      寻找可用block的方式有两种: 一种是first-available， 一种是best-fit。前者遍历extent-list, 发现足够大的extent便立刻返回。
+//      后者寻找size最合适的extent。第一种算是一种贪心策略，随着数组的增删改查，数据文件的size会增大很多。后一种比较省空间。而且，前者
+//      使用了线性查表的方式，在时间复杂度上也没有优势。
+// 2. 在找到的block或者新分配的block中，写入数据
 // 3. fsync（条件判断后做）
 // 4. 删除操作系统缓冲的对应数据的cache
+// 
+// 为什么要用跳表组织extent list? 便于快速找到合适size的block
+// 如果按页写数据，那么过大的页一定会占用较多的磁盘io, 那么wt的page大小是多少？
+//      参见：http://source.wiredtiger.com/3.2.1/struct_w_t___s_e_s_s_i_o_n.html
+//      internal_page_max和leaf_page_max两个配置项决定了页的大小
+// 从这个函数的这行代码：blk = WT_BLOCK_HEADER_REF(buf->mem); 可以得出__block_write_off是按页写数据
 /*
  * __block_write_off --
  *     Write a buffer into a block, returning the block's offset, size and checksum.
+ * 输出参数：offsetp, sizep, checksump
  */
 static int
 __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_off_t *offsetp,
@@ -278,10 +291,10 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
         local_locked = true;
     }
     // 找到可写入的位置
-    // 从寻找方式看起来，一个page在磁盘上占用的空间是连续的(不考虑最底层的文件系统)
+    // 从寻找方式看起来，一个block在磁盘上占用的空间是连续的(不考虑最底层的文件系统)
     ret = __wt_block_alloc(session, block, &offset, (wt_off_t)align_size);
     if (ret == 0)
-        ret = __wt_block_extend(session, block, fh, offset, align_size, &local_locked); // TODO: 这个函数没有太明白
+        ret = __wt_block_extend(session, block, fh, offset, align_size, &local_locked);
     if (local_locked)
         __wt_spin_unlock(session, &block->live_lock);
     WT_RET(ret);
@@ -296,11 +309,11 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
     /* Zero out any unused bytes at the end of the buffer. */
     memset((uint8_t *)buf->mem + buf->size, 0, align_size - buf->size);
 
-    // TODO: WT_ITEM *buf中还有block header，可以想见，一个WT_ITEM应该是一个page
+    // WT_ITEM *buf中还有block header，可以想见，一个WT_ITEM应该是一个page
     /*
      * Clear the block header to ensure all of it is initialized, even the unused fields.
      */
-    blk = WT_BLOCK_HEADER_REF(buf->mem);
+    blk = WT_BLOCK_HEADER_REF(buf->mem); // page header后面跟block header
     memset(blk, 0, sizeof(*blk));
 
     /*
@@ -363,7 +376,7 @@ __block_write_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_of
 
     /* Optionally discard blocks from the buffer cache. */
     WT_RET(__wt_block_discard(session, block, align_size));
-
+    // reading here. 2020-12-11-17:32
     WT_STAT_CONN_INCR(session, block_write);
     WT_STAT_CONN_INCRV(session, block_byte_write, align_size);
     if (checkpoint_io)

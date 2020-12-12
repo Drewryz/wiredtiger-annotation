@@ -102,9 +102,14 @@ struct __wt_size {
     wt_off_t size; /* Size */
 
     uint8_t depth; /* Skip list depth */
-
+    /*
+     * ？？？？ 
+     */
     WT_EXT *off[WT_SKIP_MAXDEPTH]; /* Per-size offset skiplist */
 
+    /*
+     * 这里为什么没有用柔性数组？？？ 
+     */
     /*
      * We don't use a variable-length array for the size skiplist, we want to be able to use any
      * cached WT_SIZE structure as the head of a list, and we don't know the related WT_EXT
@@ -251,6 +256,12 @@ struct __wt_block {
      */
     WT_FH *fh;            /* Backing file handle */
     wt_off_t size;        /* File size */
+    
+    /*
+     * 下面这两个变量命名我真是醉了。。。澄清下：
+     *  extend_size应该表示已经扩展的文件大小，这个待核实
+     *  extend_len是用户配置的file_extend值
+     */
     wt_off_t extend_size; /* File extended size */
     wt_off_t extend_len;  /* File extend chunk size */
 
@@ -390,7 +401,7 @@ struct __wt_block_header {
      * file until we find one that checksums, and that's going to be harsh given WiredTiger's
      * potentially large page sizes.)
      */
-    uint32_t disk_size; /* 00-03: on-disk page size */
+    uint32_t disk_size; /* 00-03: on-disk page size */ /* 块的size */
 
     /*
      * Page checksums are stored in two places. First, the page checksum is written within the
