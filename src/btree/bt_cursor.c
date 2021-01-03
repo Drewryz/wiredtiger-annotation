@@ -795,7 +795,10 @@ __wt_btcur_insert(WT_CURSOR_BTREE *cbt)
     if (btree->type == BTREE_ROW)
         WT_RET(__cursor_size_chk(session, &cursor->key));
     WT_RET(__cursor_size_chk(session, &cursor->value));
-
+    
+    /*
+     * reading here. 2021-1-3-20:24 
+     */
     /* It's no longer possible to bulk-load into the tree. */
     __cursor_disable_bulk(session, btree);
 

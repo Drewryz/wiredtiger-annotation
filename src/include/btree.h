@@ -74,6 +74,9 @@ struct __wt_btree {
         BTREE_ROW = 3      /* Row-store */
     } type;                /* Type */
 
+    /*
+     *  key value格式配置，参见：http://source.wiredtiger.com/3.2.1/struct_w_t___s_e_s_s_i_o_n.html 
+     */
     const char *key_format;   /* Key format */
     const char *value_format; /* Value format */
     uint8_t bitcnt;           /* Fixed-length field size in bits */
@@ -83,17 +86,20 @@ struct __wt_btree {
 
     uint32_t id; /* File ID, for logging */
 
-    uint32_t key_gap; /* Row-store prefix key gap */
+    /*
+     * 该配置项在新版本的wt中已经废弃，默认为10，参见：http://source.wiredtiger.com/1.4.2/struct_w_t___s_e_s_s_i_o_n.html 
+     */
+    uint32_t key_gap; /* Row-store prefix key gap */ // ????
 
-    uint32_t allocsize;        /* Allocation size */
+    uint32_t allocsize;        /* Allocation size */ /* 新增文件size的最小单元 */
     uint32_t maxintlpage;      /* Internal page max size */
     uint32_t maxintlkey;       /* Internal page max key size */
     uint32_t maxleafpage;      /* Leaf page max size */
     uint32_t maxleafkey;       /* Leaf page max key size */
     uint32_t maxleafvalue;     /* Leaf page max value size */
-    uint64_t maxmempage;       /* In-memory page max size */
+    uint64_t maxmempage;       /* In-memory page max size */ /* 内存最大的page size，那如何计算内存页大小呢？ */
     uint32_t maxmempage_image; /* In-memory page image max size */
-    uint64_t splitmempage;     /* In-memory split trigger size */
+    uint64_t splitmempage;     /* In-memory split trigger size */ /* 参考__btree_page_sizes函数 */
 
 /* AUTOMATIC FLAG VALUE GENERATION START */
 #define WT_ASSERT_COMMIT_TS_ALWAYS 0x01u
@@ -116,6 +122,9 @@ struct __wt_btree {
         CKSUM_UNCOMPRESSED = 3 /* Uncompressed blocks only */
     } checksum;                /* Checksum configuration */
 
+    /*
+     * 暂时跳过 
+     */
     /*
      * Reconciliation...
      */
@@ -145,8 +154,8 @@ struct __wt_btree {
 
     WT_RWLOCK ovfl_lock; /* Overflow lock */
 
-    int maximum_depth;        /* Maximum tree depth during search */
-    u_int rec_multiblock_max; /* Maximum blocks written for a page */
+    int maximum_depth;        /* Maximum tree depth during search */ /* 记录树的深度 */
+    u_int rec_multiblock_max; /* Maximum blocks written for a page */ /* ？？？ */
 
     uint64_t last_recno; /* Column-store last record number */
 

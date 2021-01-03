@@ -54,7 +54,8 @@ __wt_bm_preload(WT_BM *bm, WT_SESSION_IMPL *session, const uint8_t *addr, size_t
  * 1. 根据上层传入的block cookie，获取block在数据文件中的offset，size， checksum
  *    WT有很多生僻的命名方式：）这里的cookie代表着通过可变长度编码的offset,size,checksum字节流。
  *    对于block来说，WT将block的地址信息都用可变长度编码算法进行编码，主要的目的是为了节省存储空间。
- * 2. 
+ * 2. 获取block的offset，size， checksum之后，WT会检查该block是否开启了mmap预读，如果是将缓冲区指向mmap映射空间后返回
+ * 3. 如果没有开启mmap，则直接从数据文件中读取数据。
  */
 /*
  * __wt_bm_read --
@@ -78,8 +79,13 @@ __wt_bm_read(
     /* Crack the cookie. */
     WT_RET(__wt_block_buffer_to_addr(block, addr, &offset, &size, &checksum));
 
-    // reading here. 2020-12-12-16:34
-    // 何时会进入这个逻辑
+    /*
+     * 何时会进入这个逻辑参考__wt_block_map函数
+     * 当数据文件为只读类型时，并且block在mmap映射的范围之内，那么WT会对block开启预读。
+     * 在这里mmap对只读文件才开启mmap预读，主要原因如下：
+     * 1. mmap不能扩展文件大小
+     * 2. 对于写操作过多的文件，mmap相比传统的文件读取方式并没有优势。
+     */
     /*
      * Map the block if it's possible.
      */
@@ -89,7 +95,7 @@ __wt_bm_read(
         buf->data = (uint8_t *)bm->map + offset;
         buf->size = size;
         ret = handle->fh_map_preload(
-          handle, (WT_SESSION *)session, buf->data, buf->size, bm->mapped_cookie);
+          handle, (WT_SESSION *)session, buf->data, buf->size, bm->mapped_cookie); // mapped_cookie ???
 
         WT_STAT_CONN_INCR(session, block_map_read);
         WT_STAT_CONN_INCRV(session, block_byte_map_read, size);
@@ -230,6 +236,9 @@ __wt_block_read_off(WT_SESSION_IMPL *session, WT_BLOCK *block, WT_ITEM *buf, wt_
     WT_STAT_CONN_INCR(session, block_read);
     WT_STAT_CONN_INCRV(session, block_byte_read, size);
 
+    /*
+     * ？？？？ 
+     */
     /*
      * Grow the buffer as necessary and read the block. Buffers should be aligned for reading, but
      * there are lots of buffers (for example, file cursors have two buffers each, key and value),

@@ -309,6 +309,30 @@ __wt_btree_config_encryptor(
     return (0);
 }
 
+// 调用栈
+// #0  __btree_conf (session=0x7ffff7fb0470, ckpt=0x7fffffffd6e0) at src/btree/bt_handle.c:327
+// #1  0x00007ffff77e4dc8 in __wt_btree_open (session=0x7ffff7fb0470, op_cfg=0x7fffffffdd40) at src/btree/bt_handle.c:111
+// #2  0x00007ffff784ddee in __wt_conn_dhandle_open (session=0x7ffff7fb0470, cfg=0x7fffffffdd40, flags=0) at src/conn/conn_dhandle.c:466
+// #3  0x00007ffff793ac3f in __wt_session_get_dhandle (session=0x7ffff7fb0470, uri=0x635200 "file:my_table.wt", checkpoint=0x0, cfg=0x7fffffffdd40, flags=0)
+//     at src/session/session_dhandle.c:504
+// #4  0x00007ffff793abe8 in __wt_session_get_dhandle (session=0x7ffff7fb0470, uri=0x635200 "file:my_table.wt", checkpoint=0x0, cfg=0x7fffffffdd40, flags=0)
+//     at src/session/session_dhandle.c:497
+// #5  0x00007ffff793a46c in __wt_session_get_btree_ckpt (session=0x7ffff7fb0470, uri=0x635200 "file:my_table.wt", cfg=0x7fffffffdd40, flags=0)
+//     at src/session/session_dhandle.c:320
+// #6  0x00007ffff7872094 in __wt_curfile_open (session=0x7ffff7fb0470, uri=0x635200 "file:my_table.wt", owner=0x0, cfg=0x7fffffffdd40, cursorp=0x7fffffffdd58)
+//     at src/cursor/cur_file.c:805
+// #7  0x00007ffff7927e89 in __session_open_cursor_int (session=0x7ffff7fb0470, uri=0x635200 "file:my_table.wt", owner=0x0, other=0x0, cfg=0x7fffffffdd40, cursorp=0x7fffffffdd58)
+//     at src/session/session_api.c:464
+// #8  0x00007ffff7928215 in __wt_open_cursor (session=0x7ffff7fb0470, uri=0x635200 "file:my_table.wt", owner=0x0, cfg=0x7fffffffdd40, cursorp=0x7fffffffdd58)
+//     at src/session/session_api.c:528
+// #9  0x00007ffff789efea in __wt_curtable_open (session=0x7ffff7fb0470, uri=0x40099e "table:my_table", owner=0x0, cfg=0x7fffffffdd40, cursorp=0x7fffffffdd58)
+//     at src/cursor/cur_table.c:983
+// #10 0x00007ffff7927b6e in __session_open_cursor_int (session=0x7ffff7fb0470, uri=0x40099e "table:my_table", owner=0x0, other=0x0, cfg=0x7fffffffdd40, cursorp=0x7fffffffdd58)
+//     at src/session/session_api.c:432
+// #11 0x00007ffff7928852 in __session_open_cursor (wt_session=0x7ffff7fb0470, uri=0x40099e "table:my_table", to_dup=0x0, config=0x0, cursorp=0x7fffffffddd0)
+//     at src/session/session_api.c:577
+// #12 0x00000000004007d2 in main () at test_wt.c:39
+
 /*
  * __btree_conf --
  *     Configure a WT_BTREE structure.

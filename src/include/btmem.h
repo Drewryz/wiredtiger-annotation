@@ -396,6 +396,9 @@ struct __wt_page_modify {
      * page.
      */
     union {
+        /*
+         * 内部页的更改是如何进行的??? 
+         */
         struct {
             /*
              * When a root page splits, we create a new page and write it; the new page can also
@@ -524,6 +527,7 @@ WT_PACKED_STRUCT_BEGIN(__wt_col_rle)
     uint32_t indx;  /* Slot of entry in col_var. */
 WT_PACKED_STRUCT_END
 
+// reading here. 2020-12-17-17:30
 /*
  * WT_PAGE --
  *	The WT_PAGE structure describes the in-memory page information.
@@ -531,6 +535,10 @@ WT_PACKED_STRUCT_END
 struct __wt_page {
     /* Per page-type information. */
     union {
+        /* 
+         * 下面这段解释与b树的并发控制有关，但是有一些问题：
+         * 1. 子页的分裂时，尽管旧的__index被旧线程持有，但是子页的分裂会造成父页索引的变化，那为什么旧线程可以不被打断
+         */
         /*
          * Internal pages (both column- and row-store).
          *
@@ -555,15 +563,21 @@ struct __wt_page {
          * doesn't read it multiple times).
          */
         struct {
+            /*
+             * 内部页
+             */
             WT_REF *parent_ref; /* Parent reference */
             uint64_t split_gen; /* Generation of last split */
 
             struct __wt_page_index {
+                /* 子页的个数 */
                 uint32_t entries;
+                /* ？？？ */
                 uint32_t deleted_entries;
+                /* 子页的指针数组 */
                 WT_REF **index;
             } * volatile __index; /* Collated children */
-        } intl;
+        } intl; 
 #undef pg_intl_parent_ref
 #define pg_intl_parent_ref u.intl.parent_ref
 #undef pg_intl_split_gen
@@ -620,6 +634,9 @@ struct __wt_page {
         // struct __wt_row { /* On-page key, on-page cell, or off-page WT_IKEY */
         //     void *volatile __key;
         // };
+        /*
+         * 叶节点，key和value放在一坨，那wt如何实现页内数据检索和压缩 
+         */
         /* Row-store leaf page. */
         WT_ROW *row; /* Key/value pairs */
 #undef pg_row
@@ -799,7 +816,7 @@ struct __wt_page {
  *	row-store leaf pages without reading them if they don't reference
  *	overflow items.
  *
- * WT_REF_LIMBO:
+ * WT_REF_LIMBO: ??? lookaside ???
  *	The page image has been loaded into memory but there is additional
  *	history in the lookaside table that has not been applied.
  *
@@ -873,19 +890,24 @@ struct __wt_page_deleted {
  * WT_REF --
  *	A single in-memory page and the state information used to determine if
  * it's OK to dereference the pointer to the page.
+ * 内存中的单个页面和状态信息，用于确定是否可以对指向该页的指针进行解引用。
  */
 struct __wt_ref {
-    WT_PAGE *page; /* Page */  // 就是当前的page
+    WT_PAGE *page; /* Page */  // 指向当前的page
 
     /*
      * When the tree deepens as a result of a split, the home page value changes. Don't cache it, we
      * need to see that change when looking up our slot in the page's index structure.
      */
+    // reading here. 2020-12-16-21:43
     WT_PAGE *volatile home;        /* Reference page */  // home指的是parent节点
     // 该字段表示该页在父页的索引，即通过home->intl.__index->index[pindex_hint]，可以索引到当前页面
     // 注意该hint不一定准确，参考：__ref_index_slot函数
     volatile uint32_t pindex_hint; /* Reference page index hint */
 
+    /*
+     * 页状态。详细解释参见btmem.h
+     */
 #define WT_REF_DISK 0        /* Page is on disk */
 #define WT_REF_DELETED 1     /* Page is on disk, but deleted */
 #define WT_REF_LIMBO 2       /* Page is in cache without history */
@@ -897,10 +919,15 @@ struct __wt_ref {
     volatile uint32_t state; /* Page state */
 
     /*
+     * addr表示ref引用的page地址，看样子WT应该采用了指针混写的方式来表示一个page的地址。
+     * 猜测： 
+     * on-page表示地址指向磁盘
+     * off-page表示地址指向内存
+     */
+    /*
      * Address: on-page is cell type if read from backing block, off-page is WT_ADDR type if instantiated in-memory,
      * or is NULL if page created in-memory.
      */
-    // addr表示ref->page的地址，总共有三种类型，详情看上面的注释
     void *addr;
 
     /*
@@ -916,8 +943,9 @@ struct __wt_ref {
 #undef ref_ikey
 #define ref_ikey key.ikey // 每个页都有一个page key，表示该页上的所有item的key都大于等于page key
 
-    WT_PAGE_DELETED *page_del;   /* Deleted page information */
-    WT_PAGE_LOOKASIDE *page_las; /* Lookaside information */
+    // reading here. 2020-12-17-11:34
+    WT_PAGE_DELETED *page_del;   /* Deleted page information */ // ????
+    WT_PAGE_LOOKASIDE *page_las; /* Lookaside information */ // ?????
 
 /*
  * In DIAGNOSTIC mode we overwrite the WT_REF on free to force failures. Don't clear the history in
@@ -1103,6 +1131,7 @@ struct __wt_update {
 
     WT_UPDATE *next; /* forward-linked list */
 
+    /* 为0表示删除 */
     uint32_t size; /* data length */
 
 #define WT_UPDATE_INVALID 0   /* diagnostic check */
@@ -1161,7 +1190,6 @@ struct __wt_update {
  * insert_arrary[i] 表示insert_array[i]链表中所有元素的key都大于row_array[i]，且小于row_arrry[i+1]
  * 比如：一个页的key序列为: 1 10 99 200
  * 插入时会对该页分配长度为5的WT_INSERT_HEAD arr
- * arr[0]key范围为 -无穷, 1)
  * arr[0]key范围为 (1, 10)
  * arr[1]key范围为 (10, 99)
  * ...
@@ -1199,7 +1227,7 @@ struct __wt_insert {
     union {
         uint64_t recno; /* column-store record number */
         struct {
-            uint32_t offset; /* row-store key data start */ // 从WT_INSERT_KEY看来，__wt_insert结构体后面存储的是key和data
+            uint32_t offset; /* row-store key data start */ // 从WT_INSERT_KEY看来，__wt_insert结构体后面存储的是key
             uint32_t size;   /* row-store key data size */
         } key;
     } u;
@@ -1242,6 +1270,9 @@ struct __wt_insert {
  */
 struct __wt_insert_head {
     WT_INSERT *head[WT_SKIP_MAXDEPTH]; /* first item on skiplists */
+    /*
+     * tail是做什么用的？ 
+     */
     WT_INSERT *tail[WT_SKIP_MAXDEPTH]; /* last item on skiplists */
 };
 
