@@ -251,6 +251,9 @@ __wt_session_gen(WT_SESSION_IMPL *session, int which)
 }
 
 /*
+ * 将conn的generation publish给session 
+ */
+/*
  * __wt_session_gen_enter --
  *     Publish a thread's resource generation.
  */
@@ -275,6 +278,9 @@ __wt_session_gen_enter(WT_SESSION_IMPL *session, int which)
     } while (session->generations[which] != __wt_gen(session, which));
 }
 
+/*
+ * 将session的generation置为0
+ */
 /*
  * __wt_session_gen_leave --
  *     Leave a thread's resource generation.

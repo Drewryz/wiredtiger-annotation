@@ -207,6 +207,10 @@ __wt_compare_skip(WT_SESSION_IMPL *session, WT_COLLATOR *collator, const WT_ITEM
     return (collator->compare(collator, &session->iface, user_item, tree_item, cmpp));
 }
 
+
+/*
+ * 从这个函数推测出：tree_item可能引用的是on-page key，这里直接和用户的key做比较，所以page_in_memory的key是解压后的吗？
+ */
 /*
  * __wt_lex_compare_short --
  *     Lexicographic comparison routine for short keys. Returns: < 0 if user_item is

@@ -389,7 +389,7 @@ __cursor_row_search(WT_CURSOR_BTREE *cbt, bool insert, WT_REF *leaf, bool *leaf_
     WT_SESSION_IMPL *session;
 
     session = (WT_SESSION_IMPL *)cbt->iface.session;
-    // TODO: (yangzaorang) reading here 2020.8.17
+    // TODO: (yangzaorang) reading here 2021.1.4
     WT_WITH_PAGE_INDEX(
       session, ret = __wt_row_search(cbt, &cbt->iface.key, insert, leaf, false, leaf_foundp)); // cbt &cbt->iface.key true  null false null
     return (ret);
@@ -853,6 +853,7 @@ __wt_btcur_insert(WT_CURSOR_BTREE *cbt)
     __cursor_state_save(cursor, &state);
 
 retry:
+    // reading here.
     WT_ERR(__cursor_func_init(cbt, true));
     // TODO: (yangzaorang) reading here
     if (btree->type == BTREE_ROW) {

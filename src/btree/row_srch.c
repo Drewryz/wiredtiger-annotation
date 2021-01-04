@@ -206,6 +206,8 @@ __check_leaf_key_range(
 /*
  * __wt_row_search --
  *     Search a row-store tree for a specific key.
+ * srch_key: 查找key
+ * insert: 表示是否是为了insert来search
  */
 int
 __wt_row_search(WT_CURSOR_BTREE *cbt, WT_ITEM *srch_key, bool insert, WT_REF *leaf, bool leaf_safe,
@@ -327,22 +329,26 @@ restart:
          * Reference the comment above about the 0th key: we continue to
          * special-case it.
          */
-        base = 1;
+        base = 1; // base为什么要从1开始，而不是从0？
         limit = pindex->entries - 1;
         if (collator == NULL && srch_key->size <= WT_COMPARE_SHORT_MAXLEN)
             for (; limit != 0; limit >>= 1) {
                 indx = base + (limit >> 1);
                 descent = pindex->index[indx];
+                // reading here. 2021-1-4-17:21
                 __wt_ref_key(page, descent, &item->data, &item->size);
 
                 cmp = __wt_lex_compare_short(srch_key, item);
-                if (cmp > 0) {
+                if (cmp > 0) { // srch_key更大，向右侧寻找
                     base = indx + 1;
                     --limit;
                 } else if (cmp == 0)
                     goto descend;
             }
         else if (collator == NULL) {
+            /*
+             * 看晕了。。。 
+             */
             /*
              * Reset the skipped prefix counts; we'd normally expect the parent's skipped prefix
              * values to be larger than the child's values and so we'd only increase them as we walk
@@ -355,7 +361,7 @@ restart:
              * transitioning to a leaf page, a leaf page's key space can't change in flight.
              */
             skiphigh = 0;
-
+            // TODO: reading here 2021-1-4-21:14
             for (; limit != 0; limit >>= 1) {
                 indx = base + (limit >> 1);
                 descent = pindex->index[indx];

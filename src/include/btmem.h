@@ -936,6 +936,11 @@ struct __wt_ref {
      */
     union {
         uint64_t recno; /* Column-store: starting recno */
+        /*
+         * 根据__wt_ref_key函数，ikey有两种情况：
+         * 1. 指向home页 WT_PAGE_HEADER *dsk偏移
+         * 2. WT_IKEY结构体
+         */
         void *ikey;     /* Row-store: key */
     } key;
 #undef ref_recno
@@ -1090,6 +1095,7 @@ struct __wt_col {
  *	page in-memory key points to the on-page WT_CELL, but in some cases,
  *	we instantiate the key in memory, in which case the row-store page
  *	in-memory key points to a WT_IKEY structure.
+ *  注意这段话： Normally, a row-store page in-memory key points to the on-page WT_CELL
  */
 struct __wt_ikey {
     uint32_t size; /* Key length */
@@ -1353,7 +1359,7 @@ struct __wt_insert_head {
 #define WT_ENTER_PAGE_INDEX(session)                                         \
     do {                                                                     \
         uint64_t __prev_split_gen = __wt_session_gen(session, WT_GEN_SPLIT); \
-        MY_PRINTF("yzr!!! %d\n", __prev_split_gen);                             \
+        MY_PRINTF("__prev_split_gen = %llu\n", __prev_split_gen);              \
         if (__prev_split_gen == 0)                                           \
             __wt_session_gen_enter(session, WT_GEN_SPLIT);
 
@@ -1363,8 +1369,6 @@ struct __wt_insert_head {
     }                                                  \
     while (0)
 
-// WT_WITH_PAGE_INDEX(
-//       session, ret = __wt_row_search(cbt, &cbt->iface.key, insert, leaf, false, leaf_foundp));
 #define WT_WITH_PAGE_INDEX(session, e) \
     WT_ENTER_PAGE_INDEX(session);      \
     (e);                               \
