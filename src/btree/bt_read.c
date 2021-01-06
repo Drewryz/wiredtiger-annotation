@@ -692,7 +692,7 @@ read:
 #ifdef HAVE_DIAGNOSTIC
             WT_RET(__wt_hazard_set(session, ref, &busy, func, line));
 #else
-            // TODO: 这里已经获取了ref的hazard pointer，下面这一坨东西是干嘛用的？
+            // reading here. 2021-1-5-17:29
             WT_RET(__wt_hazard_set(session, ref, &busy));
 #endif
             if (busy) {

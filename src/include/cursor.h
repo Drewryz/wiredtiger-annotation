@@ -84,8 +84,11 @@ struct __wt_cursor_btree {
      * have a page, a WT_COL/WT_ROW slot on the page, an insert head, insert list and a skiplist
      * stack (the stack of skiplist entries leading to the insert point). The search functions also
      * return the relationship of the search key to the found key.
+     * 以下字段由搜索函数设置，作为页面修改的前提。也就是说搜索函数会记录搜到到的叶节点(ref), slot, ins_head, ins, 
+     * 跳表信息。以及待查关键词和查找到的关键词的大小关系(compare)
      */
     WT_REF *ref;   /* Current page */
+    /* 待插入的记录应该在page中插入的位置，具体逻辑参见__wt_row_search函数 */
     uint32_t slot; /* WT_COL/WT_ROW 0-based slot */
 
     WT_INSERT_HEAD *ins_head; /* Insert chain head */

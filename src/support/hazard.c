@@ -143,6 +143,9 @@ __wt_hazard_set(WT_SESSION_IMPL *session, WT_REF *ref, bool *busyp
     WT_FULL_BARRIER();
 
     /*
+     * 设置hazard pointer之后，还会再次检测ref的state，原因是为了防止在设置hazard pointer过程中ref被释放 
+     */
+    /*
      * Check if the page state is still valid, where valid means a state of WT_REF_LIMBO or
      * WT_REF_MEM.
      */

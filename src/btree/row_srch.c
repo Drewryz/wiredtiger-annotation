@@ -10,6 +10,11 @@
 
 #include "wt_internal.h"
 
+/* 
+ * 这个函数用于快速在跳表尾端获取待查元素的位置信息。
+ * srch_key如果比ins_head指向的跳表所有的值都大，我们可以直接将记录append到ins_head跳表中。否则直接退出。
+ * 但是如何防止多线程竞争，没有看明白
+ */
 /*
  * __search_insert_append --
  *     Fast append search of a row-store insert list, creating a skiplist stack as we go.
@@ -29,6 +34,7 @@ __search_insert_append(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt, WT_INSERT
     btree = S2BT(session);
     collator = btree->collator;
 
+    /* 跳表中没有元素，直接退出 */
     if ((ins = WT_SKIP_LAST(ins_head)) == NULL)
         return (0);
     /*
@@ -43,7 +49,7 @@ __search_insert_append(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt, WT_INSERT
     key.size = WT_INSERT_KEY_SIZE(ins);
 
     WT_RET(__wt_compare(session, collator, srch_key, &key, &cmp));
-    if (cmp >= 0) {
+    if (cmp >= 0) { // srch_key比跳表所有值都大
         /*
          * !!!
          * We may race with another appending thread.
@@ -54,7 +60,7 @@ __search_insert_append(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt, WT_INSERT
          * the time they are checked against the next stack inside the
          * serialized insert function.
          */
-        for (i = WT_SKIP_MAXDEPTH - 1; i >= 0; i--) {
+        for (i = WT_SKIP_MAXDEPTH - 1; i >= 0; i--) { // ????
             cbt->ins_stack[i] = (i == 0) ? &ins->next[0] : (ins_head->tail[i] != NULL) ?
                                            &ins_head->tail[i]->next[i] :
                                            &ins_head->head[i];
@@ -208,6 +214,13 @@ __check_leaf_key_range(
  *     Search a row-store tree for a specific key.
  * srch_key: 查找key
  * insert: 表示是否是为了insert来search
+ * leaf: 如果设置了该参数，这在该参数指定的叶子页查找关键词
+ * 
+ * 该函数是整个WT核心中的核心，用于从B树中搜索关键词。如果没有指定leaf页，则从根页开始做descending: 自顶向下搜索到叶子节点。页内搜索采用了二分查找。
+ * 对于该函数需要注意的地方是并发控制。但是从该函数看来，其并发控制方法和传统的B树访问并发控制不一样。
+ * TODO：
+ * 1. 并发控制机制
+ * 
  */
 int
 __wt_row_search(WT_CURSOR_BTREE *cbt, WT_ITEM *srch_key, bool insert, WT_REF *leaf, bool leaf_safe,
@@ -283,11 +296,17 @@ restart:
         skiphigh = skiplow = 0;
     }
 
+    /*
+     * 搜索从根页开始 
+     */
     /* Search the internal pages of the tree. */
     current = &btree->root;
     for (depth = 2, pindex = NULL;; ++depth) {
         parent_pindex = pindex;
         page = current->page;
+        /*
+         * 如果待查的页是叶子节点，说明我们到达目的地，break 
+         */
         if (page->type != WT_PAGE_ROW_INT)
             break;
 
@@ -329,9 +348,12 @@ restart:
          * Reference the comment above about the 0th key: we continue to
          * special-case it.
          */
-        base = 1; // base为什么要从1开始，而不是从0？
+        base = 1;
         limit = pindex->entries - 1;
         if (collator == NULL && srch_key->size <= WT_COMPARE_SHORT_MAXLEN)
+            /*
+             * 在页内二分查找关键词 
+             */
             for (; limit != 0; limit >>= 1) {
                 indx = base + (limit >> 1);
                 descent = pindex->index[indx];
@@ -343,7 +365,7 @@ restart:
                     base = indx + 1;
                     --limit;
                 } else if (cmp == 0)
-                    goto descend;
+                    goto descend; /* 如果待查的关键词和B树页内的关键词相等，则直接下降一层 */
             }
         else if (collator == NULL) {
             /*
@@ -361,7 +383,6 @@ restart:
              * transitioning to a leaf page, a leaf page's key space can't change in flight.
              */
             skiphigh = 0;
-            // TODO: reading here 2021-1-4-21:14
             for (; limit != 0; limit >>= 1) {
                 indx = base + (limit >> 1);
                 descent = pindex->index[indx];
@@ -393,6 +414,10 @@ restart:
             }
 
         /*
+         * 如果待查的关键词和B树页内关键词不相等，base-1记录了待查的关键词要落到的子页REF 
+         */
+
+        /*
          * Set the slot to descend the tree: descent was already set if there was an exact match on
          * the page, otherwise, base is the smallest index greater than key, possibly one past the
          * last slot.
@@ -405,6 +430,9 @@ restart:
         if (pindex->entries != base)
             descend_right = false;
 
+        /*
+         * 为什么只有base定位到最后一个才做竞争检测？ 
+         */
         /*
          * If on the last slot (the key is larger than any key on the page), check for an internal
          * page split race.
@@ -431,6 +459,7 @@ descend: // btree下降一个level
         read_flags = WT_READ_RESTART_OK;
         if (F_ISSET(cbt, WT_CBT_READ_ONCE))
             FLD_SET(read_flags, WT_READ_WONT_NEED);
+        // 先持有当前的页，然后请求descent页，然后再把当前页释放, 所以这个机制是latch coupling吗??
         if ((ret = __wt_page_swap(session, current, descent, read_flags)) == 0) {
             current = descent;
             continue;
@@ -438,12 +467,15 @@ descend: // btree下降一个level
         if (ret == WT_RESTART)
             goto restart;
         return (ret);
-    }
+    } // B tree descending 结束
 
     /* Track how deep the tree gets. */
     if (depth > btree->maximum_depth)
         btree->maximum_depth = depth;
-
+    
+    /*
+     * 我们已经desending到叶节点，下面代码在叶子节点中查找数据 
+     */
 leaf_only:
     page = current->page;
     cbt->ref = current;
@@ -468,15 +500,23 @@ leaf_only:
      * tree, we want to mark them all as appending, even if this test doesn't work.
      */
     if (insert && descend_right) {
+        /*
+         * 如果是为了insert，并且我们的descending路径是从根页的最右侧一直到叶节点，这个if逻辑是对于这种case的优化
+         */
+
         cbt->append_tree = 1;
-        // TODO: reading here 2020-9-14-18:34
-        // TODO: 下面的代码段，ins_head的取值没有搞明白
+        /* ins_head记录了待插入的记录要插入的跳表 */
         if (page->entries == 0) {
             cbt->slot = WT_ROW_SLOT(page, page->pg_row); // 这里slot索引到第一个entry，即 slot == 0
 
             F_SET(cbt, WT_CBT_SEARCH_SMALLEST);
             ins_head = WT_ROW_INSERT_SMALLEST(page);
         } else {
+            /* 这里有一个问题，上面的代码我们并没有在页节点中进行二分查找，那这里为什么直接插入到最后一个位置呢 */
+            /* 
+             * 比如当前的page数组是[90, 95, 100], 我们待插的记录是93，那根据这个逻辑我们会插入到100后面，那这明显不对呀。。。
+             * 这个问题的答案，参见下面的__search_insert_append函数
+             */
             cbt->slot = WT_ROW_SLOT(page, page->pg_row + (page->entries - 1)); // 这里slot索引到最后一个entry，即 slot == entries-1
             ins_head = WT_ROW_INSERT_SLOT(page, cbt->slot);
         }
@@ -486,6 +526,7 @@ leaf_only:
             return (0);
     }
 
+    // reading here. 2021-1-6-21:29
     /*
      * Binary search of an leaf page. There are three versions (keys with no application-specified
      * collation order, in long and short versions, and keys with an application-specified collation

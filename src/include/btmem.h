@@ -1277,7 +1277,7 @@ struct __wt_insert {
 struct __wt_insert_head {
     WT_INSERT *head[WT_SKIP_MAXDEPTH]; /* first item on skiplists */
     /*
-     * tail是做什么用的？ 
+     * tail指向跳表最后一个元素，这样我们可以非常方便地获取到跳表的最大值
      */
     WT_INSERT *tail[WT_SKIP_MAXDEPTH]; /* last item on skiplists */
 };

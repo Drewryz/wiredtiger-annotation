@@ -1612,6 +1612,7 @@ __wt_split_descent_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX *sa
      * page's replacement index, the parent page's index must already have
      * changed, ensuring we detect the problem.
      *
+     * ????
      * It's possible for the opposite race to happen (a thread could read
      * the parent page's replacement page index and then read the split
      * page's original index). This isn't a problem because internal splits
