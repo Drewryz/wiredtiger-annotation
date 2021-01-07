@@ -1075,7 +1075,17 @@ __wt_row_leaf_value(WT_PAGE *page, WT_ROW *rip, WT_ITEM *value)
     return (false);
 }
 
-// 对于一个ref指向的WT_REF，返回它的addr, size, type
+/*
+ * 根据WT_REF.addr获取WT_REF的block地址信息。
+ * 1. WT_REF.addr为空，表示the page was deleted or had only lookaside entries, 参考__page_read函数
+ * 2. WT_REF.addr指向的地址不在WT_REF.home页上，则说明WT_REF.addr已经初始化过了，此时其指向的是WT_ADDR类型，
+ *    根据WT_ADDR定义可以知道，这时返回的地址是Block-manager's cookie和Block-manager's cookie length。
+ *    这就表示，WT_REF.page还在磁盘上。
+ * 3. WT_REF.addr指向的地址在WT_REF.home页上，此时其指向的类型为WT_CELL，此时WT_REF.addr未初始化，需要将其初始化
+ * 
+ * TODO:
+ * WT_CELL unpack的过程就是磁盘数据结构展开成内存数据结构的过程
+ */
 /*
  * __wt_ref_info --
  *     Return the addr/size and type triplet for a reference.
@@ -1092,7 +1102,6 @@ __wt_ref_info(
     unpack = &_unpack;
     page = ref->home;
 
-    // 如果为空，则没有位置。如果离页，指针引用一个WT_ADDR结构。如果在页面上，指针引用一个cell。
     /*
      * If NULL, there is no location. If off-page, the pointer references a WT_ADDR structure. If
      * on-page, the pointer references a cell.
@@ -1104,7 +1113,7 @@ __wt_ref_info(
         *sizep = 0;
         if (typep != NULL)
             *typep = 0;
-    } else if (__wt_off_page(page, addr)) { // 离页表示ref->addr不在ref->home上，此时addr是WT_ADDR，表示ref->page在磁盘上的地址
+    } else if (__wt_off_page(page, addr)) { //  WT_REF.addr指向的地址不在WT_REF.home页上
         *addrp = addr->addr;
         *sizep = addr->size;
         if (typep != NULL)
@@ -1122,7 +1131,7 @@ __wt_ref_info(
                 *typep = 0;
                 break;
             }
-    } else { // 在页表示ref->addr在ref->home上，此时addr是WT_CELL，也可以获得ref->page的地址
+    } else {
         __wt_cell_unpack(session, page, (WT_CELL *)addr, unpack);
         *addrp = unpack->data;
         *sizep = unpack->size;

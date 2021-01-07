@@ -217,7 +217,18 @@ __check_leaf_key_range(
  * leaf: 如果设置了该参数，这在该参数指定的叶子页查找关键词
  * 
  * 该函数是整个WT核心中的核心，用于从B树中搜索关键词。如果没有指定leaf页，则从根页开始做descending: 自顶向下搜索到叶子节点。页内搜索采用了二分查找。
+ * 执行过程：
+ * 1. 从根页开始向下遍历B树
+ * 2. 在内部页中通过二分查找搜索关键词定位到子页
+ * 3. 如果子页不在内存中，则从磁盘上读入。参见：__wt_page_swap与__page_read函数
+ * 4. 重复步骤2，直到desending到叶节点。
+ * 5. 对于页节点，我们同样在其内部进行二分查找，分为两种情况：查找到srch_key与未查找到srch_key
+ * 6. 如果查找到srch_key，那非常好，设置WT_CURSOR_BTREE.slot，返回
+ * 7. 如果未找到，则定位到srch_key相对应的insert跳表
+ * 8. 定位到对应的跳表后，在跳表中找到要插入的位置，保存到WT_CURSOR_BTREE.ins_stack上
+ * 
  * 对于该函数需要注意的地方是并发控制。但是从该函数看来，其并发控制方法和传统的B树访问并发控制不一样。
+ * 
  * TODO：
  * 1. 并发控制机制
  * 
@@ -625,6 +636,9 @@ leaf_match:
     if (WT_SKIP_FIRST(ins_head) == NULL)
         return (0);
 
+    /*
+     * 这里的fast path代码，大可不必。因为如果你插入的不是最后一页，那插入的记录很大概率不会落在插入跳表的最后。 
+     */
     /*
      * Test for an append first when inserting onto an insert list, try to catch cursors repeatedly
      * inserting at a single point.

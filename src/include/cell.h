@@ -141,6 +141,7 @@
  */
 struct __wt_cell {
     /*
+     * 下面的注释，左边的数字表示对应的域最多占用多少byte。比如4个时间戳是最多占用36个byte，2个txn id最多占用18个byte，...
      * Maximum of 71 bytes:
      *  1: cell descriptor byte
      *  1: prefix compression count TODO: 一个字节的prefix compression count是用来做什么的

@@ -13,7 +13,7 @@
 #define WT_READ_CACHE 0x0001u   // 只读取cache中的page
 #define WT_READ_DELETED_CHECK 0x0002u
 #define WT_READ_DELETED_SKIP 0x0004u // 读取到删除的page，则跳过
-#define WT_READ_IGNORE_CACHE_SIZE 0x0008u
+#define WT_READ_IGNORE_CACHE_SIZE 0x0008u // 表示page常驻内存
 #define WT_READ_LOOKASIDE 0x0010u
 #define WT_READ_NOTFOUND_OK 0x0020u
 #define WT_READ_NO_GEN 0x0040u
@@ -76,8 +76,8 @@ struct __wt_page_header {
  * No automatic generation: flag values cannot change, they're written to disk.
  */
 #define WT_PAGE_COMPRESSED 0x01u   /* Page is compressed on disk */
-#define WT_PAGE_EMPTY_V_ALL 0x02u  /* Page has all zero-length values */
-#define WT_PAGE_EMPTY_V_NONE 0x04u /* Page has no zero-length values */
+#define WT_PAGE_EMPTY_V_ALL 0x02u  /* Page has all zero-length values */ /* 磁盘上的页面的kv对，value全是空 */
+#define WT_PAGE_EMPTY_V_NONE 0x04u /* Page has no zero-length values */ /*  磁盘上的页面的kv对，不存在空value */
 #define WT_PAGE_ENCRYPTED 0x08u    /* Page is encrypted on disk */
 #define WT_PAGE_LAS_UPDATE 0x10u   /* Page updates in lookaside store */
     uint8_t flags;                 /* 25: flags */
@@ -126,7 +126,6 @@ __wt_page_header_byteswap(WT_PAGE_HEADER *dsk)
 #define WT_PAGE_HEADER_BYTE(btree, dsk) \
     ((void *)((uint8_t *)(dsk) + WT_PAGE_HEADER_BYTE_SIZE(btree)))
 
-//  page有内存地址，也有在磁盘上的地址
 /*
  * WT_ADDR --
  *	An in-memory structure to hold a block's location.
@@ -696,8 +695,8 @@ struct __wt_page {
 
 /* AUTOMATIC FLAG VALUE GENERATION START */
 #define WT_PAGE_BUILD_KEYS 0x01u        /* Keys have been built in memory */
-#define WT_PAGE_DISK_ALLOC 0x02u        /* Disk image in allocated memory */
-#define WT_PAGE_DISK_MAPPED 0x04u       /* Disk image in mapped memory */
+#define WT_PAGE_DISK_ALLOC 0x02u        /* Disk image in allocated memory */ /* 页直接被读入内存 */
+#define WT_PAGE_DISK_MAPPED 0x04u       /* Disk image in mapped memory */ /* 页通过mmap的方式映射到内存 */
 #define WT_PAGE_EVICT_LRU 0x08u         /* Page is on the LRU queue */
 #define WT_PAGE_EVICT_NO_PROGRESS 0x10u /* Eviction doesn't count as progress */
 #define WT_PAGE_OVERFLOW_KEYS 0x20u     /* Page has overflow keys */
@@ -919,7 +918,7 @@ struct __wt_ref {
     volatile uint32_t state; /* Page state */
 
     /*
-     * addr表示ref引用的page地址，看样子WT应该采用了指针混写的方式来表示一个page的地址。
+     * addr表示ref引用的page地址，WT采用了指针混写的方式来表示一个page的地址。参见：__wt_ref_info函数
      * 猜测： 
      * on-page表示地址指向磁盘
      * off-page表示地址指向内存
@@ -938,7 +937,7 @@ struct __wt_ref {
         uint64_t recno; /* Column-store: starting recno */
         /*
          * 根据__wt_ref_key函数，ikey有两种情况：
-         * 1. 指向home页 WT_PAGE_HEADER *dsk偏移
+         * 1. 指向home页 WT_PAGE_HEADER *dsk偏移 (on-page)
          * 2. WT_IKEY结构体
          */
         void *ikey;     /* Row-store: key */

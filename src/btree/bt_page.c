@@ -125,6 +125,13 @@ err:
     return (0);
 }
 
+
+/*
+ * 构建Page的内存格式
+ * 1. 根据磁盘页类型，获取页存有多少数据，参见__inmem_row_leaf_entries函数
+ * 2. 新建一个内存页并且与磁盘页绑定
+ * 3. 将磁盘页的数据展开到内存页，参见__inmem_row_int和__inmem_row_leaf函数
+ */
 /*
  * __wt_page_inmem --
  *     Build in-memory page information.

@@ -406,6 +406,32 @@ __page_read_lookaside(
     return (0);
 }
 
+
+/*
+ * 将ref引用的page从磁盘上读入内存 
+ * 1. 判断page(WT_REF.state)的状态，如果当前状态为WT_REF_DISK，则新的状态设为WT_REF_READING
+ *    如果当前状态为WT_REF_DELETED，WT_REF_LIMBO，WT_REF_LOOKASIDE，则新的状态设为WT_REF_LOCKED
+ * 2. 原子地设置REF状态，失败退出
+ * 3. 根据WT_REF.addr获取page在磁盘上的地址，参见__wt_ref_info函数
+ * 4. 根据上一步获取的磁盘地址，读取数据。读取到的数据已经完成了解压和解密，参见__wt_bt_read函数
+ * 5. 根据读取的数据将磁盘上的page数据结构展开成page的内存结构。参见__wt_page_inmem函数
+ *    这里的问题在于，对于同一个page，你在内存有两个副本，一个是内存结构的page，一个是磁盘结构的page。
+ *    这样会造成更多的内存空间开销。
+ * 6. 获取到内存页后返回。这一步涉及了与lookaside相关的操作，参见if (final_state == WT_REF_MEM && ref->page_las != NULL &&
+      (ref->page_las->min_skipped_ts != WT_TS_MAX || ref->page_las->has_prepares))
+        WT_ERR(__wt_las_remove_block(session, ref->page_las->las_pageid));
+ * 7. 如果WT_REF的状态之前是WT_REF_DELETED，WT_REF_LIMBO，WT_REF_LOOKASIDE， 会做一些与lookaside和
+ *    page delete相关的动作，涉及到的内容很多，暂时跳过。
+ * 
+ * TODO：
+ * 1. 这个解释没有看明白：
+ *  Get the address: if there is no address, the page was deleted or had only lookaside entries,
+ *  and a subsequent search or insert is forcing re-creation of the name space.
+ * 2. __wt_delete_page_instantiate
+ * 3. __page_read_lookaside
+ * 4. __las_page_instantiate
+ * 5. __wt_las_remove_block
+ */
 /*
  * __page_read --
  *     Read a page from the file.
@@ -466,7 +492,10 @@ __page_read(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags)
     __wt_ref_info(session, ref, &addr, &addr_size, NULL); // reading here. 2020-8-31-11:47
     if (addr == NULL) {
         WT_ASSERT(session, previous_state != WT_REF_DISK);
-
+        /*
+         * 根据上面的注释，如果一个REF的adddr为空，表示该page被删除或者只有lookaside entries，所以这里先分配一个空页。
+         * 目的是什么还不明确
+         */
         WT_ERR(__wt_btree_new_leaf_page(session, &ref->page));
         goto skip_read;
     }
@@ -495,6 +524,9 @@ __page_read(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t flags)
      * disabling eviction allows pages to be read even when the cache is full, we want to avoid
      * workloads repeatedly reading a page with eviction disabled (e.g., a metadata page), then
      * evicting that page and deciding that is a sign that eviction is unstuck.
+     */
+    /* 
+     * 读取数据有两种方式，一种是mmap，一种是直接读到内存，WT_DATA_IN_ITEM用于检测这两种情况
      */
     page_flags = WT_DATA_IN_ITEM(&tmp) ? WT_PAGE_DISK_ALLOC : WT_PAGE_DISK_MAPPED;
     if (LF_ISSET(WT_READ_IGNORE_CACHE_SIZE))
@@ -528,6 +560,7 @@ skip_read:
         break;
     }
 
+    /* ？？？？ */
     /*
      * Once the page is instantiated, we no longer need the history in
      * lookaside.  We leave the lookaside sweep thread to do most cleanup,
