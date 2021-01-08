@@ -74,7 +74,6 @@
  * The bottom bit in this additional byte indicates that the cell is part of a
  * prepared, and not yet committed transaction. The next 6 bits describe a validity
  * and durability window of timestamp/transaction IDs.  The top bit is currently unused.
- * TODO: 接下来看cell类型 reading here 2020-8-31-22:51
  * Bits 5-8 are cell "types".
  */
 #define WT_CELL_KEY_SHORT 0x01     /* Short key */
@@ -134,7 +133,12 @@
 #define WT_CELL_SIZE_ADJUST (WT_CELL_SHORT_MAX + 1)
 
 
-// 这个结构体给出了cell结构的最大size（不同类型的cell，有些域是没有的）。注意，cell类型不包括具体的数据
+/*
+ *  ----------------------------------------------------------------
+ * |          cell_header         |            cell_data            | 
+ *  ----------------------------------------------------------------     
+ *  磁盘上一个cell的布局如上所示，WT_CELL就是cell_header。 cell_data跟在cell_header之后
+ */
 /*
  * WT_CELL --
  *	Variable-length, on-page cell header.
@@ -167,6 +171,10 @@ struct __wt_cell_unpack {
 
     uint64_t v; /* RLE count or recno */
 
+    /*
+     * 下面这一坨代码应该和mongo4.4新特性有关，参见：
+     * https://jira.mongodb.org/browse/WT-5672
+     */
     /* Value validity window */
     wt_timestamp_t start_ts;         /* default value: WT_TS_NONE */
     uint64_t start_txn;              /* default value: WT_TXN_NONE */
@@ -207,5 +215,6 @@ struct __wt_cell_unpack {
     uint8_t flags;
 
     wt_timestamp_t newest_durable_ts; /* 4.2, 4.4 compatibility */
+    /* 是否为溢出cell */
     uint8_t ovfl;
 };

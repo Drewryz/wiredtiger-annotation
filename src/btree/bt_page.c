@@ -415,7 +415,13 @@ __inmem_row_int(WT_SESSION_IMPL *session, WT_PAGE *page, size_t *sizep)
     refp = pindex->index;
     overflow_keys = false;
     hint = 0;
-    // TODO: reading here 2020-9-7-11:47
+    /*
+     *   ----------------------------------------------------------------------------------
+     *  |    PAGE_HEADER    |    BLOCK_HEADER     |   CELL   |  CELL  |  ...... |   CELL   | 
+     *   ----------------------------------------------------------------------------------
+     * 这个宏从第一个cell开始向后遍历，直到遍历到最后一个cell结束。
+     * 每个cell的展开过程参见：__wt_cell_unpack_dsk
+     */
     WT_CELL_FOREACH_BEGIN (session, btree, page->dsk, unpack) {
         ref = *refp;
         ref->home = page;

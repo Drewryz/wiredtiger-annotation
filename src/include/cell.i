@@ -791,7 +791,11 @@ __unstable_skip(WT_SESSION_IMPL *session, WT_CELL_UNPACK *unpack)
      */
     return (unpack->stop_ts != WT_TS_MAX || unpack->stop_txn != WT_TXN_MAX);
 }
-
+/*
+ * 将cell做unpack。该函数涉及到与txn_id以及时间戳相关的信息，可以忽略，这个与timestamp事务有关。
+ * 另外，这个函数说白了就是得到了WT_CELL_UNPACK.data, WT_CELL_UNPACK.size, WT_CELL_UNPACK.prefix等信息。
+ * WT_CELL_UNPACK.data是直接从磁盘上读入的，这个函数并没有对其进行加工。
+ */
 /*
  * __wt_cell_unpack_safe --
  *     Unpack a WT_CELL into a structure, with optional boundary checks.
@@ -870,6 +874,9 @@ restart:
     unpack->newest_durable_ts = WT_TS_NONE;
     unpack->ovfl = 0;
 
+    /*
+     * 处理short类型的cell 
+     */    
     /*
      * Handle cells with none of RLE counts, validity window or data length: short key/data cells
      * have 6 bits of data length in the descriptor byte and nothing else.
