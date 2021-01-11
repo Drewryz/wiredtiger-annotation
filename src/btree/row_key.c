@@ -529,7 +529,7 @@ __wt_row_ikey(
         WT_ASSERT(session, __wt_atomic_cas_ptr(&ref->ref_ikey, (WT_IKEY *)oldv, ikey));
     }
 #else
-    ref->ref_ikey = ikey; // TODO: ref_ikey表示的是什么？
+    ref->ref_ikey = ikey;
 #endif
     return (0);
 }

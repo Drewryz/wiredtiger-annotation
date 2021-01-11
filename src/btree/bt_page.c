@@ -389,6 +389,17 @@ __inmem_col_var(WT_SESSION_IMPL *session, WT_PAGE *page, uint64_t recno, size_t 
 /*
  * __inmem_row_int --
  *     Build in-memory index for row-store internal pages.
+ * page: page->disk持有从磁盘上读取的数据
+ * 主要步骤：
+ * 1. 对于WT_CELL_KEY，将cell做unpack，然后将ref->ref_ikey设置为unpack的data，可见WT将B树读入内存时，并没有将页的空间占用放大为2倍
+ * 2. 对于WT_CELL_ADDR_INT, WT_CELL_ADDR_LEAF, WT_CELL_ADDR_LEAF_NO, 将ref->addr设置为unpack.cell
+ * 3. 对于溢出key，WT_CELL_KEY_OVFL来说，unpack.data和unpack.size存储的是key在磁盘上的地址，此时key单独占用一个page
+ *    详细逻辑参见__ovfl_read函数。
+ * 
+ * PS: 
+ * 1. 如果溢出key再溢出应该如何处理？
+ *    WT应该只支持单页溢出，也就是溢出的页最多只存储在一个页内，这个页的size应该在4GB以内
+ * 2. 内部页并没有WT_CELL_KEY_PFX类型，可见内部页并没有对key的前缀压缩
  */
 // 遍历页上所有的cell，初始化page
 static int
@@ -435,18 +446,25 @@ __inmem_row_int(WT_SESSION_IMPL *session, WT_PAGE *page, size_t *sizep)
             __wt_ref_key_onpage_set(page, ref, &unpack);
             break;
         case WT_CELL_KEY_OVFL:
+        	/*overflow key的内容是存储在单独存储空间上，需要用overflow方式读取到内存对象中来并构建row key*/
             /*
              * Instantiate any overflow keys; WiredTiger depends on this, assuming any overflow key
              * is instantiated, and any keys that aren't instantiated cannot be overflow items.
              */
+            /* 读溢出key。从这个函数看来，溢出页在磁盘上没有采用cell的方式存储，存储的直接是数据 */
             WT_ERR(__wt_dsk_cell_data_ref(session, page->type, &unpack, current));
-            // TODO: 这个函数具体在做什么，没有看懂
+            /* 设置ref.key，此时key为WT_IKEY*/
             WT_ERR(__wt_row_ikey_incr(session, page, WT_PAGE_DISK_OFFSET(page, unpack.cell),
               current->data, current->size, ref));
 
             *sizep += sizeof(WT_IKEY) + current->size;
             overflow_keys = true;
             break;
+        /*
+         * 这个case属于优化代码，跳过。参见：
+         * https://jira.mongodb.org/browse/WT-3805
+         * https://jira.mongodb.org/browse/WT-3987
+         */
         case WT_CELL_ADDR_DEL:
             /*
              * A cell may reference a deleted leaf page: if a leaf page was deleted without being
@@ -479,6 +497,7 @@ __inmem_row_int(WT_SESSION_IMPL *session, WT_PAGE *page, size_t *sizep)
         case WT_CELL_ADDR_INT:
         case WT_CELL_ADDR_LEAF:
         case WT_CELL_ADDR_LEAF_NO:
+            /* 这里为什么存cell，而不存unpack.data */
             ref->addr = unpack.cell;
             ++refp;
             break;

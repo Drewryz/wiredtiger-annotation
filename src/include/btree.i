@@ -777,9 +777,8 @@ __wt_row_leaf_key_info(
  * 叶子页的 WT_ROW.__key会指向两个地方：
  * 1. on-pace WT_CELL (未初始化)
  * 2. WT_IKEY (已初始化)
- * TODO: 没太看明白，这两者有什么区别。
  * 另外，on-page keys有两种状态。如果key是一个简单的key，key的offset/size被编
- * 码在指针中。否则key的offset是key的on-page cell。
+ * 码在指针中。否则只编码key的offset,参见__wt_row_leaf_key_set_cell。
  * A row-store leaf page key is in one of two places: if instantiated,
  * the WT_ROW pointer references a WT_IKEY structure, otherwise, it
  * references an on-page offset.  Further, on-page keys are in one of

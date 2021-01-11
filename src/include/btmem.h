@@ -884,7 +884,6 @@ struct __wt_page_deleted {
     WT_UPDATE **update_list; /* List of updates for abort */
 };
 
-// WT_REF用于两层page之间的过度
 /*
  * WT_REF --
  *	A single in-memory page and the state information used to determine if
@@ -918,10 +917,9 @@ struct __wt_ref {
     volatile uint32_t state; /* Page state */
 
     /*
-     * addr表示ref引用的page地址，WT采用了指针混写的方式来表示一个page的地址。参见：__wt_ref_info函数
-     * 猜测： 
-     * on-page表示地址指向磁盘
-     * off-page表示地址指向内存
+     * addr表示ref引用的page地址
+     * on-page, addr是一个cell(该cell已经读入了内存，但是未做任何操作), 参见：__inmem_row_int函数
+     * off-page: 记录了磁盘block地址，参见WT_ADDR定义
      */
     /*
      * Address: on-page is cell type if read from backing block, off-page is WT_ADDR type if instantiated in-memory,
@@ -1087,6 +1085,9 @@ struct __wt_col {
  */
 #define WT_COL_SLOT(page, cip) ((uint32_t)(((WT_COL *)(cip)) - (page)->pg_var))
 
+/*
+ * 这个结构体后面跟随的是key数据
+ */
 /*
  * WT_IKEY --
  *	Instantiated key: row-store keys are usually prefix compressed and
