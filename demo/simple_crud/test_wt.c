@@ -38,7 +38,7 @@ int main() {
     session->create(session, "table:my_table", "key_format=S,value_format=S");
     session->open_cursor(session, "table:my_table", NULL, NULL, &cursor);
     printf("Insert a record.\n");
-    cursor->set_key(cursor, "key1");
+    cursor->set_key(cursor, "key2");
     cursor->set_value(cursor, "val1");
     cursor->insert(cursor);
     printf("Inserting is success?\n");

@@ -40,9 +40,22 @@ err:
 }
 
 /*
- * 整体上说将改变的元素建链
+ * 行存储的增删改
  * __wt_row_modify --
  *     Row-store insert, update and delete.
+ * upd_arg: 不为NULL，表示调用者已经新建好了update条目
+ * 对于update或者delete操作
+ * 1. 获取要更新的update list
+ * 2. 如果upd_arg为NULL：
+ *    1) 检查当前事务是否可以对key做更新,参见__wt_txn_update_check。(更新冲突)
+ *    2) 根据value，分配一个WT_UPDATE对象
+ *    3) 向session对应的事务的操作列表添加一个update操作,标记这个操作属于这个事务
+ * 3. 如果upd_arg不为NULL:
+ *    1) 获取update list head
+ * 4. 将更新的数据原子地插入update list头部， 参见__wt_update_serial
+ * TODO: 
+ * 1. __wt_txn_update_check逻辑
+ * 2. 按照现在的更新和删除逻辑，WT的内存page不会进行分裂或者合并，那在什么时候内存页才会分裂或者合并呢
  */
 int
 __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, WT_UPDATE *upd_arg,
@@ -80,9 +93,10 @@ __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, 
      * Insert: allocate an insert array as necessary, build a WT_INSERT and WT_UPDATE structure
      * pair, and call a serialized function to insert the WT_INSERT structure.
      */
-    if (cbt->compare == 0) { // compare为0表示找到，此时的modify操作为update，否则为insert
+    if (cbt->compare == 0) { // compare为0表示modify操作为update/delete，否则为insert
         if (cbt->ins == NULL) {
             /* Allocate an update array as necessary. */
+            /* 如果update数组为空，则分配有entries个元素的数组 */
             WT_PAGE_ALLOC_AND_SWAP(session, page, mod->mod_row_update, upd_entry, page->entries);
 
             /* Set the WT_UPDATE array reference. */
@@ -110,6 +124,7 @@ __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, 
              */
             WT_ASSERT(session, *upd_entry == NULL);
 
+            /* 此时update->next指向的已经是update list的head */
             /*
              * Set the "old" entry to the second update in the list so that the serialization
              * function succeeds in swapping the first update into place.
@@ -124,7 +139,7 @@ __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, 
         upd->next = old_upd; // 对同一个key的更新是一个链表，这里将最新的更新放在链表的最前面
 
         /* Serialize the update. */
-        WT_ERR(__wt_update_serial(session, page, upd_entry, &upd, upd_size, exclusive)); // TODO: 什么是serial？
+        WT_ERR(__wt_update_serial(session, page, upd_entry, &upd, upd_size, exclusive));
     } else {
         /*
          * Allocate the insert array as necessary.

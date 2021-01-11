@@ -399,6 +399,7 @@ __wt_txn_op_set_timestamp(WT_SESSION_IMPL *session, WT_TXN_OP *op)
     }
 }
 
+/* 向session对应的事务的操作列表添加一个update操作,标记这个操作属于这个事务*/
 /*
  * __wt_txn_modify --
  *     Mark a WT_UPDATE object modified by the current transaction.

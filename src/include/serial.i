@@ -217,6 +217,18 @@ __wt_insert_serial(WT_SESSION_IMPL *session, WT_PAGE *page, WT_INSERT_HEAD *ins_
 /*
  * __wt_update_serial --
  *     Update a row or column-store entry.
+ * 将更新的数据原子地插入update list头部。这个函数也说明为什么update/delete操作不需要加锁
+ * page: 更新数据所在的页
+ * srch_upd: update list head
+ * updp: 要插入的update数据
+ * 步骤：
+ * 1. 原子更新srch_upd为updp
+ * 2. 将page设为脏
+ * 3. f ((txn = page->modify->obsolete_check_txn) != WT_TXN_NONE)这一坨没搞明白
+ * 4. 加锁后，检查过时的更新，参见__wt_update_obsolete_check
+ * TODO:
+ * 1. f ((txn = page->modify->obsolete_check_txn) != WT_TXN_NONE) {}
+ * 2. __wt_update_obsolete_check, 什么样的更新才是过期的呢？
  */
 static inline int
 __wt_update_serial(WT_SESSION_IMPL *session, WT_PAGE *page, WT_UPDATE **srch_upd, WT_UPDATE **updp,
@@ -260,10 +272,12 @@ __wt_update_serial(WT_SESSION_IMPL *session, WT_PAGE *page, WT_UPDATE **srch_upd
     if (upd->next == NULL || exclusive)
         return (0);
 
+    /* 根据git提交记录，下面这个if逻辑与这个issue有关，参见：https://jira.mongodb.org/browse/SERVER-20193 */
     /*
      * We would like to call __wt_txn_update_oldest only in the event that there are further updates
      * to this page, the check against WT_TXN_NONE is used as an indicator of there being further
      * updates on this page.
+     * ？？？？
      */
     if ((txn = page->modify->obsolete_check_txn) != WT_TXN_NONE) {
         obsolete_timestamp = page->modify->obsolete_check_timestamp;
@@ -281,7 +295,7 @@ __wt_update_serial(WT_SESSION_IMPL *session, WT_PAGE *page, WT_UPDATE **srch_upd
     /* If we can't lock it, don't scan, that's okay. */
     if (WT_PAGE_TRYLOCK(session, page) != 0)
         return (0);
-
+    /* 检查过时的更新 */
     obsolete = __wt_update_obsolete_check(session, page, upd->next, true);
 
     WT_PAGE_UNLOCK(session, page);
