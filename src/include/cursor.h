@@ -87,7 +87,7 @@ struct __wt_cursor_btree {
      * 以下字段由搜索函数设置，作为页面修改的前提。也就是说搜索函数会记录搜到到的叶节点(ref), slot, ins_head, ins, 
      * 跳表信息。以及待查关键词和查找到的关键词的大小关系(compare)
      */
-    WT_REF *ref;   /* Current page */
+    WT_REF *ref;   /* Current page */ /* 搜索到的叶节点，参见__wt_row_search */
     /* 待插入的记录应该在page中插入的位置，具体逻辑参见__wt_row_search函数 */
     uint32_t slot; /* WT_COL/WT_ROW 0-based slot */
 

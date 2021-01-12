@@ -44,18 +44,25 @@ err:
  * __wt_row_modify --
  *     Row-store insert, update and delete.
  * upd_arg: 不为NULL，表示调用者已经新建好了update条目
- * 对于update或者delete操作
+ * 对于update或者delete操作：
  * 1. 获取要更新的update list
  * 2. 如果upd_arg为NULL：
  *    1) 检查当前事务是否可以对key做更新,参见__wt_txn_update_check。(更新冲突)
- *    2) 根据value，分配一个WT_UPDATE对象
+ *    2) 根据value，分配一个WT_UPDATE对象、
  *    3) 向session对应的事务的操作列表添加一个update操作,标记这个操作属于这个事务
  * 3. 如果upd_arg不为NULL:
  *    1) 获取update list head
  * 4. 将更新的数据原子地插入update list头部， 参见__wt_update_serial
+ * insert操作与更改操作类似，有一点不同__wt_insert_serial这个函数使用了page lock
+ * 1. 
  * TODO: 
  * 1. __wt_txn_update_check逻辑
  * 2. 按照现在的更新和删除逻辑，WT的内存page不会进行分裂或者合并，那在什么时候内存页才会分裂或者合并呢
+ * 3. WT对于update-list的更新通过原子操作的方式更改update list head，这个过程读操作应该不需要加锁，确定下
+ * 4. WT对于insert-skipt-list的写操作采用了对page加latch的方式，那读操作需要加锁吗？
+ *    简单搜索了一下，似乎读操作不需要加锁, 这个和跳表的结构有关系，其实跳表可以实现成完全无锁的, 但是WT没有这么做，大概率的原因是实现成无锁的效率提升不大。
+ * 5. WT的增删改全部下沉到内存维护的modify结构体中，但是如果事务回滚，此时WT的行为是什么呢？
+ *    可以参考WT_UPDATE.txnid字段，事务回滚时，应该会将该字段置未一个特殊值。而每个事务都会维护自身更删改的数组，回滚时可以立刻找到，不得不说，这个设计真是十分美妙。
  */
 int
 __wt_row_modify(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM *value, WT_UPDATE *upd_arg,

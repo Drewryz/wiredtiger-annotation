@@ -748,8 +748,12 @@ __wt_ref_key_clear(WT_REF *ref)
     ref->ref_recno = 0;
 }
 
-// 这个函数根据copy返回leaf page row的key信息
-// copy应该为WT_ROW.__key
+/* 根据WT_ROW.__key返回key的数据和key的size */
+/* 
+ * copy: WT_ROW.__key
+ * datap: 要返回的key data
+ * sizep: 要返回的key size
+ */
 /*
  * __wt_row_leaf_key_info --
  *     Return a row-store leaf page key referenced by a WT_ROW if it can be had without unpacking a

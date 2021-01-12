@@ -162,6 +162,7 @@ __wt_col_append_serial(WT_SESSION_IMPL *session, WT_PAGE *page, WT_INSERT_HEAD *
     return (0);
 }
 
+/*串行的增加一个WT_INSERT entry到btree上，这个过程是被lock住的*/
 /*
  * __wt_insert_serial --
  *     Insert a row or column-store entry.

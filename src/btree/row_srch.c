@@ -215,6 +215,7 @@ __check_leaf_key_range(
  * srch_key: 查找key
  * insert: 表示是否是为了insert来search
  * leaf: 如果设置了该参数，这在该参数指定的叶子页查找关键词
+ * leaf_safe：？？？
  * 
  * 该函数是整个WT核心中的核心，用于从B树中搜索关键词。如果没有指定leaf页，则从根页开始做descending: 自顶向下搜索到叶子节点。页内搜索采用了二分查找。
  * 执行过程：
@@ -546,9 +547,11 @@ leaf_only:
     base = 0;
     limit = page->entries;
     if (collator == NULL && srch_key->size <= WT_COMPARE_SHORT_MAXLEN)
+        /* 这个for循环仅仅搜索了row entries，并没有搜索update链表和insert跳表 */
         for (; limit != 0; limit >>= 1) {
             indx = base + (limit >> 1);
             rip = page->pg_row + indx;
+            /* 根据rip获取key数据放入item中 */
             WT_ERR(__wt_row_leaf_key(session, page, rip, item, true));
 
             cmp = __wt_lex_compare_short(srch_key, item);
@@ -648,6 +651,7 @@ leaf_match:
         if (done)
             return (0);
     }
+    /* 上面的逻辑没有找到相关记录，接下来我们在insert跳表中搜索 */
     WT_ERR(__wt_search_insert(session, cbt, ins_head, srch_key));
 
     return (0);

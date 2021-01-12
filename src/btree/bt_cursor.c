@@ -526,6 +526,16 @@ __wt_btcur_search_uncommitted(WT_CURSOR *cursor, WT_UPDATE **updp)
 /*
  * __wt_btcur_search --
  *     Search for a matching record in the tree.
+ * 点查函数，步骤(fast path代码省略):
+ * 1. 从B树的根开始搜索(__cursor_row_search)
+ * 2. 如果搜索到：判断搜索到的kv对是否有效(__wt_cursor_valid)。未搜索到，返回not found
+ * 3. kv对有效, 执行__cursor_kv_return
+ * 4. kv对无效，执行__cursor_fix_implicit
+ * TODO: 
+ * 1. __cursor_row_search，如何搜索？涉及到事务可见性与回滚
+ * 1. __wt_cursor_valid
+ * 2. __cursor_kv_return
+ * 3. __cursor_fix_implicit
  */
 int
 __wt_btcur_search(WT_CURSOR_BTREE *cbt)
@@ -559,6 +569,7 @@ __wt_btcur_search(WT_CURSOR_BTREE *cbt)
     __cursor_novalue(cursor);
     __cursor_state_save(cursor, &state);
 
+    /* fast-path coding. 如果cursor有引用page，那么就不用从根开始了，可以直接在该page中搜索 */
     /*
      * If we have a page pinned, search it; if we don't have a page pinned, or the search of the
      * pinned page doesn't find an exact match, search from the root.
@@ -574,14 +585,17 @@ __wt_btcur_search(WT_CURSOR_BTREE *cbt)
         if (leaf_found && cbt->compare == 0)
             WT_ERR(__wt_cursor_valid(cbt, &upd, &valid));
     }
+    /* 从根开始搜索 */
     if (!valid) {
         WT_ERR(__cursor_func_init(cbt, true));
 
         WT_ERR(btree->type == BTREE_ROW ? __cursor_row_search(cbt, false, NULL, NULL) :
                                           __cursor_col_search(cbt, NULL, NULL));
 
+        /* compare为0，表示找到了对应的key，但kv对可能在原始页中，也可能在update链表中，还可能在insert跳表中 */
         /* Return, if prepare conflict encountered. */
         if (cbt->compare == 0)
+            /* 判断搜索到的kv对是否有效 */
             WT_ERR(__wt_cursor_valid(cbt, &upd, &valid));
     }
 
