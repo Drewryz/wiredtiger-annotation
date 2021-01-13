@@ -283,6 +283,10 @@ restart_read:
 /*
  * __cursor_row_next --
  *     Move to the next row-store item.
+ * newpage: 对于这次范围查询是否第一次搜索该页
+ * 整体说来这个函数从两个地方返回下一条记录：
+ * 1. 如果上次查找的insert跳表不为空，那返回跳表的下一条数据
+ * 2. 否则从update-list中查询
  */
 static inline int
 __cursor_row_next(WT_CURSOR_BTREE *cbt, bool newpage, bool restart)
@@ -522,6 +526,9 @@ __wt_cursor_key_order_reset(WT_CURSOR_BTREE *cbt)
 /*
  * __wt_btcur_iterate_setup --
  *     Initialize a cursor for iteration, usually based on a search.
+ * 用于next遍历或者prev遍历的cursor初始化
+ * TODO:
+ * row_iteration_slot
  */
 void
 __wt_btcur_iterate_setup(WT_CURSOR_BTREE *cbt)
@@ -569,7 +576,7 @@ __wt_btcur_iterate_setup(WT_CURSOR_BTREE *cbt)
             else
                 cbt->row_iteration_slot += 1;
         }
-    } else {
+    } else { // 列存储跳过
         /*
          * For column-store pages, calculate the largest record on the page.
          */
@@ -585,6 +592,14 @@ __wt_btcur_iterate_setup(WT_CURSOR_BTREE *cbt)
 /*
  * __wt_btcur_next --
  *     Move to the next record in the tree.
+ * 范围遍历，步骤：
+ * 1. 如果我们目前不在任何一个叶子page上，调用__wt_tree_walk，得到一个叶子page，如果未找到叶子page，则说明遍历完毕，退出
+ * 2. 从当前的叶子page开始遍历，__cursor_row_next
+ * 3. 如果找到记录，则直接从该函数返回
+ * 4. 未找到记录则重新执行第1步
+ * TODO: 
+ * 1. WT跨页查询如何防止死锁
+ * 2. __cursor_row_next
  */
 int
 __wt_btcur_next(WT_CURSOR_BTREE *cbt, bool truncating)
@@ -625,7 +640,7 @@ __wt_btcur_next(WT_CURSOR_BTREE *cbt, bool truncating)
     for (newpage = false;; newpage = true, restart = false) {
         page = cbt->ref == NULL ? NULL : cbt->ref->page;
 
-        if (F_ISSET(cbt, WT_CBT_ITERATE_APPEND)) {
+        if (F_ISSET(cbt, WT_CBT_ITERATE_APPEND)) { // 列存储，跳过
             switch (page->type) {
             case WT_PAGE_COL_FIX:
                 ret = __cursor_fix_append_next(cbt, newpage, restart);
@@ -655,6 +670,7 @@ __wt_btcur_next(WT_CURSOR_BTREE *cbt, bool truncating)
             default:
                 WT_ERR(__wt_illegal_value(session, page->type));
             }
+            /* 找到相关结果，直接break出整个循环 */
             if (ret != WT_NOTFOUND)
                 break;
 
@@ -667,7 +683,7 @@ __wt_btcur_next(WT_CURSOR_BTREE *cbt, bool truncating)
                 continue;
             }
         }
-
+        /* 以上在一个页中未找打结果，接下来需要walk到下一页，参见__wt_tree_walk */
         /*
          * If we saw a lot of deleted records on this page, or we went all the way through a page
          * and only saw deleted records, try to evict the page when we release it. Otherwise

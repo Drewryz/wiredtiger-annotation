@@ -205,6 +205,12 @@ __cursor_fix_implicit(WT_BTREE *btree, WT_CURSOR_BTREE *cbt)
     return (btree->type == BTREE_COL_FIX && cbt->compare != -1);
 }
 
+/* 判断search到的记录是否有效 */
+/*
+ * cbt: 记录了查找的信息
+ * updp: 输出参数
+ * valid: 输出参数，标明记录是否有效 
+ */
 /*
  * __wt_cursor_valid --
  *     Return if the cursor references an valid key/value pair.
@@ -271,6 +277,7 @@ __wt_cursor_valid(WT_CURSOR_BTREE *cbt, WT_UPDATE **updp, bool *valid)
      * update that's been deleted is not a valid key/value pair).
      */
     if (cbt->ins != NULL) {
+        /* 该函数用于从链表中读取第一个可见的update */
         WT_RET(__wt_txn_read(session, cbt->ins->upd, &upd));
         if (upd != NULL) {
             if (upd->type == WT_UPDATE_TOMBSTONE)
@@ -381,6 +388,7 @@ __cursor_col_search(WT_CURSOR_BTREE *cbt, WT_REF *leaf, bool *leaf_foundp)
 /*
  * __cursor_row_search --
  *     Row-store search from a cursor.
+ * 该函数并没有涉及到事务处理逻辑
  */
 static inline int
 __cursor_row_search(WT_CURSOR_BTREE *cbt, bool insert, WT_REF *leaf, bool *leaf_foundp)  // cbt, true, NULL, NULL
@@ -528,14 +536,14 @@ __wt_btcur_search_uncommitted(WT_CURSOR *cursor, WT_UPDATE **updp)
  *     Search for a matching record in the tree.
  * 点查函数，步骤(fast path代码省略):
  * 1. 从B树的根开始搜索(__cursor_row_search)
- * 2. 如果搜索到：判断搜索到的kv对是否有效(__wt_cursor_valid)。未搜索到，返回not found
- * 3. kv对有效, 执行__cursor_kv_return
- * 4. kv对无效，执行__cursor_fix_implicit
- * TODO: 
- * 1. __cursor_row_search，如何搜索？涉及到事务可见性与回滚
- * 1. __wt_cursor_valid
- * 2. __cursor_kv_return
- * 3. __cursor_fix_implicit
+ * 2. 如果搜索到：判断搜索到的数据对是否有效(__wt_cursor_valid)。未搜索到，返回not found
+ *    对于点查来说，搜索到的数据有三种：
+ *    1) 最原始的数据，此时数据未发生改动
+ *    2) update链表
+ *    3) WT_INSERT(WT_INSERT也有一个update域，所以对同一个key的更改也用update链表链接起来)
+ *    对于case1,此时搜索到的数据就是有效的，可以直接返回。
+ *    对于case2和3，__wt_cursor_valid函数用来在update链表和WT_INSERT中遍历找到该事务第一个可见的元素
+ * 3. 数据有效, 设置kv的一些信息后返回，参见__cursor_kv_return
  */
 int
 __wt_btcur_search(WT_CURSOR_BTREE *cbt)
@@ -601,7 +609,7 @@ __wt_btcur_search(WT_CURSOR_BTREE *cbt)
 
     if (valid)
         ret = __cursor_kv_return(cbt, upd);
-    else if (__cursor_fix_implicit(btree, cbt)) {
+    else if (__cursor_fix_implicit(btree, cbt)) { // 与列存相关，跳过
         /*
          * Creating a record past the end of the tree in a fixed-length column-store implicitly
          * fills the gap with empty records.

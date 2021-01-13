@@ -261,6 +261,7 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
  */ 
 //     return (__tree_walk_internal(session, refp, NULL, NULL, NULL, flags));
 // 该函数后序遍历树，返回当前页的下一个页。关于树的后续遍历：https://zh.wikipedia.org/zh-hans/树的遍历
+// reading here. 2021-1-13
 static inline int
 __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp,
   int (*skip_func)(WT_SESSION_IMPL *, WT_REF *, void *, bool *), void *func_cookie, uint32_t flags)
