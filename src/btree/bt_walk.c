@@ -27,6 +27,18 @@ __ref_index_slot(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp,
      * wait for that to happen.
      */
     for (sleep_usecs = yield_count = 0;;) {
+        /* 页可能随时发生分裂，但是父页到子页的索引一直有效 */
+        /*
+         * 这里有一个问题：
+         * 比如有一个叶子页L，其有数据：a b c d e f
+         * 1. 假设要搜索关键词e，我根据父页的index了解到关键词e应该在叶子页L中，所以我得到了L页的引用，准备在L页中查找关键词
+         * 2. 此时，假设L页分裂成三个新的叶子页: a b | c d | e f
+         * 3. 我在第一步中拿到的L页，此时的数据只有a和b了，那我在L页中做search肯定找不到关键词e，这就发生了错误。
+         * 解决这个问题的关键是在，如果有线程持有L页的hazard-pointer, 那就不允许其他线程对L页split。
+         * WT的做法是做数据页descending时，先获取父页的hazard-pointer，然后再获取子页的hazard-pointer，如果
+         * 子页此时正在分裂(可以根据子页的state字段得知)，则__wt_row_search函数会restart，从root开始重新搜索。
+         * 具体细节查wt page分裂的过程。
+         */
         /*
          * Copy the parent page's index value: the page can split at any time, but the index's value
          * is always valid, even if it's not up-to-date.
@@ -261,7 +273,13 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
  */ 
 //     return (__tree_walk_internal(session, refp, NULL, NULL, NULL, flags));
 // 该函数后序遍历树，返回当前页的下一个页。关于树的后续遍历：https://zh.wikipedia.org/zh-hans/树的遍历
-// reading here. 2021-1-13
+/*
+ * 该函数后序遍历树，返回当前页的下一个页。关于树的后续遍历：https://zh.wikipedia.org/zh-hans/树的遍历
+ * refp: 当前页的引用
+ * walkcntp: 
+ * 主要关注点：
+ * 1. 跨页同步问题
+ */
 static inline int
 __tree_walk_internal(WT_SESSION_IMPL *session, WT_REF **refp, uint64_t *walkcntp,
   int (*skip_func)(WT_SESSION_IMPL *, WT_REF *, void *, bool *), void *func_cookie, uint32_t flags)
@@ -362,6 +380,7 @@ restart:
         }
     }
 
+    /* 遇到根节点，表示遍历结束*/
     /*
      * If the active page was the root, we've reached the walk's end; we only get here if we've
      * returned the root to our caller, so we're holding no hazard pointers.
@@ -369,6 +388,16 @@ restart:
     if (__wt_ref_is_root(ref))
         goto done;
 
+    /* reading here. 2021-1-13-21:32 */
+    /*
+     * TODO: 
+     * 1. wt page分裂过程
+     * 2. wt page分裂过程与row_search结合，探究并发问题
+     * 3. __ref_index_slot的那一大段注释没有搞明白
+     * 4. 将WT关于内存页分裂的文档再看一遍
+     * 5. 了解并发方式之后再看__tree_walk_internal，不然没有太多价值
+     * 先做第4个
+     */
     /* Figure out the current slot in the WT_REF array. */
     __ref_index_slot(session, ref, &pindex, &slot);
 
