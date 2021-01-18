@@ -346,6 +346,11 @@ __txn_oldest_scan(WT_SESSION_IMPL *session, uint64_t *oldest_idp, uint64_t *last
  * __wt_txn_update_oldest --
  *     Sweep the running transactions to update the oldest ID required.
  * 扫描正在运行的事务以更新所需的最旧ID。WT_ERR(__wt_txn_update_oldest(session, WT_TXN_OLDEST_STRICT | WT_TXN_OLDEST_WAIT));
+ * 更新全局事务管理器的oldest_id字段。大致了解到对于oldest_id的更新需要搜索整个事务链表。该函数会在eviciton和checkpoint时使用到
+ * WT_TXN_OLDEST_STRICT：希望拿到精确的oldest_id
+ * WT_TXN_OLDEST_WAIT: 为了拿到oldest_id，允许等待
+ * TODO: 
+ * oldest_id的作用是什么？在事务管理中承担的角色是什么？
  */
 int
 __wt_txn_update_oldest(WT_SESSION_IMPL *session, uint32_t flags)
@@ -354,6 +359,9 @@ __wt_txn_update_oldest(WT_SESSION_IMPL *session, uint32_t flags)
     WT_DECL_RET;
     WT_SESSION_IMPL *oldest_session;
     WT_TXN_GLOBAL *txn_global;
+    /*
+     * 与metadata_pinned相关的, 跳过: https://jira.mongodb.org/browse/WT-2984 
+     */
     uint64_t current_id, last_running, metadata_pinned, oldest_id;
     uint64_t prev_last_running, prev_metadata_pinned, prev_oldest_id;
     bool strict, wait;
@@ -369,6 +377,7 @@ __wt_txn_update_oldest(WT_SESSION_IMPL *session, uint32_t flags)
     prev_oldest_id = txn_global->oldest_id;
     // reading here 2020-11-26-17:24
     /* Try to move the pinned timestamp forward. */
+    /* timestamp相关，跳过。。。 */
     if (strict)
         WT_RET(__wt_txn_update_pinned_timestamp(session, false));
 

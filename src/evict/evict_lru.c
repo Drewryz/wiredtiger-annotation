@@ -267,7 +267,15 @@ __wt_evict_thread_chk(WT_SESSION_IMPL *session)
  * __wt_evict_thread_run --
  *     Entry function for an eviction thread. This is called repeatedly from the thread group code
  *     so it does not need to loop itself.
- *     这个函数会接连不断地被thread group调用，指的是__thread_run函数体里会持续不断地调用run_func，即该函数。
+ * 这个函数会接连不断地被thread group调用，指的是__thread_run函数体里会持续不断地调用run_func，即该函数。
+ * 该函数是server和worker的入口函数：
+ * 1. 每个eviciton thread进入该函数后，会首先申请cache->evict_pass_lock锁，成功的线程，成为server，失败的线程成为worker
+ * 2. 对于server线程，主要用于扫描B树，将要刷得脏页放入队列中, 参见__evict_server
+ * 3. 对于worker线程，主要从脏页中获取page，然后进行实际的刷脏操作，参见__evict_lru_pages
+ * TODO:
+ * 1. __evict_server
+ * 2. __evict_lru_pages
+ * 3. 页在何时分裂，以及分裂过程
  */
 int
 __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
@@ -365,6 +373,7 @@ err:
  * __evict_server --
  *     Thread to evict pages from the cache.
  * 这个函数是evict server的核心函数
+ * 
  */
 static int
 __evict_server(WT_SESSION_IMPL *session, bool *did_work)
@@ -466,7 +475,8 @@ __evict_server(WT_SESSION_IMPL *session, bool *did_work)
 /*
  * __wt_evict_create --
  *     Start the eviction server.
- * TODO: reading here. 2020-9-28-15:02
+ * 创建eviction线程。该函数在WT启动时调用。
+ * 
  */
 int
 __wt_evict_create(WT_SESSION_IMPL *session)
@@ -543,8 +553,8 @@ __wt_evict_destroy(WT_SESSION_IMPL *session)
 /*
  * __evict_update_work --
  *     Configure eviction work state.
- * 这个函数用来指定应该执行哪类eviciton
- * 如果不需要evicit，返回false
+ * 这个函数用来指定应该执行哪类eviciton，如果不需要evicit，返回false
+ * 
  */
 static bool
 __evict_update_work(WT_SESSION_IMPL *session)
@@ -572,6 +582,7 @@ __evict_update_work(WT_SESSION_IMPL *session)
         return (false);
     }
 
+    /* urgent queue不为空，设置WT_CACHE_EVICT_URGENT */
     if (!__evict_queue_empty(cache->evict_urgent_queue, false))
         LF_SET(WT_CACHE_EVICT_URGENT);
 
@@ -582,6 +593,12 @@ __evict_update_work(WT_SESSION_IMPL *session)
         cache->bytes_lookaside = las_tree->bytes_inmem;
     }
 
+    /*
+     * cache使用率超过eviction_trigger时, 设置WT_CACHE_EVICT_CLEAN和WT_CACHE_EVICT_CLEAN_HARD
+     * cache使用率超过eviction_target时, 设置WT_CACHE_EVICT_CLEAN
+     * 脏页率超过dirty_trigger时，设置WT_CACHE_EVICT_DIRTY和WT_CACHE_EVICT_DIRTY_HARD
+     * 脏页率超过dirty_target时，设置WT_CACHE_EVICT_DIRTY
+     */
     /*
      * If we need space in the cache, try to find clean pages to evict.
      *
@@ -607,6 +624,7 @@ __evict_update_work(WT_SESSION_IMPL *session)
     if (__wt_cache_aggressive(session) && LF_ISSET(WT_CACHE_EVICT_CLEAN_HARD))
         LF_SET(WT_CACHE_EVICT_DIRTY);
 
+    /* 关于WT_CACHE_EVICT_SCRUB，参见：https://jira.mongodb.org/browse/WT-2233 */
     /*
      * Scrub dirty pages and keep them in cache if we are less than half way to the clean or dirty
      * trigger.
@@ -617,8 +635,11 @@ __evict_update_work(WT_SESSION_IMPL *session)
         if (dirty_inuse < (uint64_t)((dirty_target + dirty_trigger) * bytes_max) / 200)
             LF_SET(WT_CACHE_EVICT_SCRUB);
     } else
-        LF_SET(WT_CACHE_EVICT_NOKEEP); // TODO: 这个标识又用来干嘛用的？
+        LF_SET(WT_CACHE_EVICT_NOKEEP); // pass
 
+    /*
+     * 与lookaside相关的代码跳过 
+     */
     /*
      * Try lookaside evict when:
      * (1) the cache is stuck; OR
@@ -652,7 +673,12 @@ __evict_update_work(WT_SESSION_IMPL *session)
  * __evict_pass --
  *     Evict pages from memory.
  * eviction server的核心函数
- * TODO: reading here 2020-9-28-20:00
+ * 该函数的核心是一个循环，当eviciton被打断或者不需要做eviciton，退出循环。循环的主要流程如下：
+ * 1. 判断应该执行哪类eviciton，如果当前不需要evicit直接退出，参见__evict_update_work
+ * 2. 需要eviction，执行__evict_lru_walk
+ * 3. 判断是否需要server线程也帮忙做__evict_lru_pages，需要的话执行__evict_lru_pages
+ * TODO:
+ * 1. __evict_lru_walk
  */
 static int
 __evict_pass(WT_SESSION_IMPL *session)
@@ -673,12 +699,15 @@ __evict_pass(WT_SESSION_IMPL *session)
     eviction_progress = cache->eviction_progress;
     prev_oldest_id = txn_global->oldest_id;
 
+    /*
+     * 被打断或者不需要做eviciton，退出循环
+     */
     /* Evict pages from the cache. */
-    for (loop = 0; cache->pass_intr == 0; loop++) { // 没有被打断则一直循环
+    for (loop = 0; cache->pass_intr == 0; loop++) {
         time_now = __wt_clock(session);
         if (loop == 0)
             time_prev = time_now;
-
+        /* 调整eviciton worker的个数 */
         __evict_tune_workers(session);
         /*
          * Increment the shared read generation. Do this occasionally even if eviction is not
@@ -705,10 +734,10 @@ __evict_pass(WT_SESSION_IMPL *session)
         __wt_verbose(session, WT_VERB_EVICTSERVER,
           "Eviction pass with: Max: %" PRIu64 " In use: %" PRIu64 " Dirty: %" PRIu64,
           conn->cache_size, cache->bytes_inmem, cache->bytes_dirty_intl + cache->bytes_dirty_leaf);
-        // reading here. 2020-10-12-15:54
         if (F_ISSET(cache, WT_CACHE_EVICT_ALL))
             WT_RET(__evict_lru_walk(session));
 
+        /* 下面这坨if条件用来判断是否需要server线程页帮忙做eviciton操作 */
         /*
          * If the queue has been empty recently, keep queuing more pages to evict. If the rate of
          * queuing pages is high enough, this score will go to zero, in which case the eviction
@@ -725,6 +754,7 @@ __evict_pass(WT_SESSION_IMPL *session)
         if (cache->pass_intr != 0)
             break;
 
+        /* 下面这个if逻辑用来处理当eviciton无进展时的情况 */
         /*
          * If we're making progress, keep going; if we're not making any progress at all, mark the
          * cache "stuck" and go back to sleep, it's not something we can fix.
@@ -768,6 +798,7 @@ __evict_pass(WT_SESSION_IMPL *session)
             __wt_verbose(session, WT_VERB_EVICTSERVER, "%s", "unable to reach eviction goal");
             break;
         }
+        /* 到了这一步，表示eviciton的紧急程度有所下降，降低描述紧急程度的分数 */
         if (cache->evict_aggressive_score > 0)
             --cache->evict_aggressive_score;
         loop = 0;
@@ -1137,8 +1168,19 @@ __evict_lru_pages(WT_SESSION_IMPL *session, bool is_server)
 /*
  * __evict_lru_walk --
  *     Add pages to the LRU queue to be evicted from cache.
- * TODO: reading here 2020-9-29-18:25
+ * TODO: reading here 2021-1-18-15:22
  * 添加页到lru队列中, 排序, signal
+ * 1. 选择evict_queue
+ * 2. 遍历btree，将需要evict的页放入evict_queue，参见：__evict_walk
+ * 3. 处理evict_queue
+ *    a) 将队列中的entry，按照score，从低到高排序
+ *    b) 在数组尾部丢弃一些entry
+ *    c) 并不是队列中所有的page都要被evict，这一步确定有多少候选者将会被evict。参见queue->evict_candidates
+ * 4. 应该是唤醒worker线程。__wt_cond_signal(session, S2C(session)->evict_threads.wait_cond);
+ * TODO:
+ * 1. WT为什么不采用这样的设计：将内存中所有的page组成lru链表，那么每次刷脏的时候直接取最近最久未使用的page做eviciton，那就不需要再遍历btree了。
+ * 2. __evict_walk
+ * 3.  __wt_cond_signal(session, S2C(session)->evict_threads.wait_cond);
  */
 static int
 __evict_lru_walk(WT_SESSION_IMPL *session)
@@ -1199,6 +1241,7 @@ __evict_lru_walk(WT_SESSION_IMPL *session)
     /* Sort the list into LRU order and restart. */
     __wt_spin_lock(session, &queue->evict_lock);
 
+    /* ???? */
     /*
      * We have locked the queue: in the (unusual) case where we are filling the current queue, mark
      * it empty so that subsequent requests switch to the other queue.
@@ -1207,6 +1250,7 @@ __evict_lru_walk(WT_SESSION_IMPL *session)
         queue->evict_current = NULL;
 
     entries = queue->evict_entries;
+    /* 从小到大排列 */
     /*
      * Style note: __wt_qsort is a macro that can leave a dangling else. Full curly braces are
      * needed here for the compiler.
@@ -1221,6 +1265,7 @@ __evict_lru_walk(WT_SESSION_IMPL *session)
     while (entries > 0 && queue->evict_queue[entries - 1].ref == NULL)
         --entries;
 
+    /* 如果队列中，有效的entry超过了WT_EVICT_WALK_BASE，丢弃掉 */
     /*
      * If we have more entries than the maximum tracked between walks, clear them. Do this before
      * figuring out how many of the entries are candidates so we never end up with more candidates
@@ -1365,6 +1410,16 @@ __evict_walk_choose_dhandle(WT_SESSION_IMPL *session, WT_DATA_HANDLE **dhandle_p
 /*
  * __evict_walk --
  *     Fill in the array by walking the next set of pages.
+ * 扫描整个connection中打开的btree索引文件，将能evict的btree page放入queue中
+ * 
+ * 1. 循环开始
+ * 2. 选择一个b树做walk, 参见：__evict_walk_choose_dhandle
+ * 3. 判断选择的b树是否需要eviciton，不需要继续进行第2步
+ * 4. __evict_walk_tree
+ * 5. 当向队列中加入足够多的page(WT_EVICT_WALK_INCR)，退出循环
+ * 6. 设置queue.evict_entries
+ * 7. 返回
+ * 
  */
 static int
 __evict_walk(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue)
@@ -1602,6 +1657,7 @@ __evict_push_candidate(
  * __evict_walk_target --
  *     Calculate how many pages to queue for a given tree.
  * 一棵树可以被evict多少个页呢
+ * 总体思想：一个b树在cache占用的比例越大，它要被eviciton的页越多
  */
 static uint32_t
 __evict_walk_target(WT_SESSION_IMPL *session)
@@ -1668,7 +1724,6 @@ __evict_walk_target(WT_SESSION_IMPL *session)
     return (target_pages);
 }
 
-// TODO: reading here. 2020-9-30-14:18
 /*
  * __evict_walk_tree --
  *     Get a few page eviction candidates from a single underlying file.
@@ -1712,6 +1767,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
         btree->evict_walk_target = __evict_walk_target(session);
         btree->evict_walk_progress = 0;
     }
+    // TODO: reading here. 2021-1-18-21:22
     target_pages = btree->evict_walk_target - btree->evict_walk_progress;
 
     if (target_pages > remaining_slots)

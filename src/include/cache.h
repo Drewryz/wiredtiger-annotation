@@ -36,15 +36,14 @@ struct __wt_evict_entry {
 /*
  * WT_EVICT_QUEUE --
  *	Encapsulation of an eviction candidate queue.
- * 队列的数据是怎么组织的, 猜测可能是个环状队列
- * TMD，这个队列结构连个解释都不给，wtf
+ * 这个结构应该是是个数组
  */
 struct __wt_evict_queue {
     WT_SPINLOCK evict_lock;        /* Eviction LRU queue */
-    WT_EVICT_ENTRY *evict_queue;   /* LRU pages being tracked */ // 队列头
+    WT_EVICT_ENTRY *evict_queue;   /* LRU pages being tracked */ // 数组，数组初始化参见__wt_cache_create
     WT_EVICT_ENTRY *evict_current; /* LRU current page to be evicted */ // evict到的位置
-    // queue的队列头+evict_candidates就是page入队的位置
-    uint32_t evict_candidates;     /* LRU list pages to evict */ // 目测是evict候选者的个数，因为并不是队列中所有的页都是候选者
+    // queue的数组头+evict_candidates就是page入队的位置
+    uint32_t evict_candidates;     /* LRU list pages to evict */ //  evict候选者的个数，因为并不是队列中所有的页都是候选者
     uint32_t evict_entries;        /* LRU entries in the queue */ // 队列中的LRU条目。应该是队列尾，表示要入队的entry的位置
     volatile uint32_t evict_max;   /* LRU maximum eviction slot used */ // Keep track of the maximum slot we are using
 };

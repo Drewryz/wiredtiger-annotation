@@ -123,6 +123,7 @@ struct __wt_txn_global {
      * The oldest transaction ID that is not yet visible to some transaction in the system.
      * 对系统中的某些事务还不可见的最旧的事务ID。
      * 每个事务启动时，都有一个不可见事务区间。这个id记录了所有事务的所有不可见区间最早的事务
+     * 系统中最早产生且还在执行的写事务ID
      */
     volatile uint64_t oldest_id;
 
