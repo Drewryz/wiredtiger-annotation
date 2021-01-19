@@ -579,6 +579,7 @@ __txn_visible_all_id(WT_SESSION_IMPL *session, uint64_t id)
     return (WT_TXNID_LT(id, oldest_id));
 }
 
+/*判断事务ID是否对系统中所有的事务是可见的*/
 /*
  * __wt_txn_visible_all --
  *     Check if a given transaction is "globally visible". This is, if all sessions in the system

@@ -313,7 +313,7 @@ __wt_evict_thread_run(WT_SESSION_IMPL *session, WT_THREAD *thread)
         if (was_intr)
             while (cache->pass_intr != 0 && F_ISSET(conn, WT_CONN_EVICTION_RUN) &&
               F_ISSET(thread, WT_THREAD_RUN))
-                __wt_yield(); // TODO:
+                __wt_yield();
         else {
             __wt_verbose(session, WT_VERB_EVICTSERVER, "%s", "sleeping");
 
@@ -372,7 +372,7 @@ err:
 /*
  * __evict_server --
  *     Thread to evict pages from the cache.
- * 这个函数是evict server的核心函数
+ * 这个函数是evict server的入口函数
  * 
  */
 static int
@@ -394,7 +394,7 @@ __evict_server(WT_SESSION_IMPL *session, bool *did_work)
 
     if (!F_ISSET(conn, WT_CONN_EVICTION_RUN) || cache->pass_intr != 0)
         return (0);
-
+    /* reading here. 2021-1-19-21:30 */
     if (!__wt_cache_stuck(session)) { // TODO: 没有stuck的逻辑是什么？
         /*
          * Try to get the handle list lock: if we give up, that indicates a session is waiting for
@@ -1138,6 +1138,7 @@ done:
 /*
  * __evict_lru_pages --
  *     Get pages from the LRU queue to evict.
+ * evciton-worker的入口函数
  */
 static int
 __evict_lru_pages(WT_SESSION_IMPL *session, bool is_server)
@@ -1615,6 +1616,7 @@ err:
 /*
  * __evict_push_candidate --
  *     Initialize a WT_EVICT_ENTRY structure with a given page.
+ * 计算ref的分数，参考__evict_entry_priority
  */
 static bool
 __evict_push_candidate(
@@ -1727,12 +1729,33 @@ __evict_walk_target(WT_SESSION_IMPL *session)
 /*
  * __evict_walk_tree --
  *     Get a few page eviction candidates from a single underlying file.
+ * eviction-server扫描b树的函数，其目的是要填充队列
+ *   -----------------------------------------------------------
+ *  |     |      |      |     |      |      |     |      |      |
+ *   -----------------------------------------------------------
+ *                start                             end
+ *               |------------ target_pages -------------|
+ * start是B树需要做eviciton的页要入队位置
+ * target_pages表示需要入队target_pages个页， target_pages的计算过程，参考__evict_walk_target
+ * 1. 从btree->evict_ref引用的page开始后序遍历B树
+ *    每次遍历获取B树的一个page，该page可能包括叶节点和内部节点
+ * 2. 对于遍历到的page:
+ *    a. 如果页已经在lru队列中，跳过该页
+ *    b. 如果页已经在做checkpoint，跳过该页
+ *    c. 如果页的read_gen等于WT_READGEN_OLDEST, 执行__wt_page_evict_urgent，continue
+ *       关于WT_READGEN_OLDEST，参考__wt_page_evict_soon
+ *    d. 如果页占用的内存超过了max_memory_page_size, 执行__wt_page_evict_urgent，continue
+ *    f. 对于一个内部页，如果它有子页在内存中，则跳过该页
+ *    e. 调用__wt_page_can_evict，查看页是否可以evict，不可以，则跳过该页
+ * 3. 对于筛选通过的页，计算该page的分数(__evict_entry_prioritys)，并将其push到队列中，参见__evict_push_candidate
+ *    cache的read_gen从WT_READGEN_START_VALUE开始，参考__wt_cache_create
+ *    通过__wt_cache_read_gen_incr，对cache的read_gen加1
+ *    page的read_gen会被每次访问的时候设置，参考__wt_cache_read_gen_new和__wt_cache_read_gen_bump
+ * 4. 如果入队的页超过了target_pages，退出循环。如果扫描了足够多的页，退出循环。如果B树遍历完了，退出循环。
  * TODO:
- * __wt_tree_walk_count
- * __wt_page_evict_urgent
- * __wt_page_can_evict
- * __evict_push_candidate
- * __wt_page_release
+ * 1. WT_READ_CACHE | WT_READ_NO_EVICT | WT_READ_NO_GEN | WT_READ_NO_WAIT，每个标识表示什么
+ * 2. __wt_page_can_evict
+ * 3. 即使一个页正在访问，这个函数还是有可能把它加入到eviciton队列中，那worker在处理队列中的元素时，会怎么处理这个情况呢
  */
 static int
 __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_entries, u_int *slotp)
@@ -1937,8 +1960,10 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
         if (__wt_ref_is_root(ref))
             continue;
 
+        /* 对于遍历得到的page */
         page = ref->page;
         modified = __wt_page_is_modified(page);
+        /* ???? */
         page->evict_pass_gen = cache->evict_pass_gen;
 
         /* count internal pages seen. */
@@ -1969,12 +1994,11 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
         if (page->read_gen == WT_READGEN_NOTSET)
             __wt_cache_read_gen_new(session, page); // 没有设置read gen，则设置
 
-        // reading here. 2020-10-13-19:32
         /* Pages being forcibly evicted go on the urgent queue. 被强制驱逐的页面进入紧急队列。*/
         if (modified &&
           (page->read_gen == WT_READGEN_OLDEST || page->memory_footprint >= btree->splitmempage)) {
             WT_STAT_CONN_INCR(session, cache_eviction_pages_queued_oldest);
-            if (__wt_page_evict_urgent(session, ref)) // TODO: __wt_page_evict_urgent
+            if (__wt_page_evict_urgent(session, ref))
                 urgent_queued = true;
             continue;
         }
@@ -1989,6 +2013,7 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
           F_ISSET(btree, WT_BTREE_LOOKASIDE))
             goto fast;
 
+        /* reading here. 2021-1-19-12:10 */
         /*
          * If application threads are blocked on eviction of clean pages, and the only thing
          * preventing a clean leaf page from being evicted is it contains historical data, mark it
@@ -2022,7 +2047,6 @@ __evict_walk_tree(WT_SESSION_IMPL *session, WT_EVICT_QUEUE *queue, u_int max_ent
          * Also skip internal page unless we get aggressive, the tree is idle (indicated by the tree
          * being skipped for walks), or we are in eviction debug mode. The goal here is that if
          * trees become completely idle, we eventually push them out of cache completely.
-         * TODO: 为什么树是空闲的就不跳过内部页
          */
         if (!F_ISSET(cache, WT_CACHE_EVICT_DEBUG_MODE) && WT_PAGE_IS_INTERNAL(page)) {
             if (page == last_parent)
@@ -2308,7 +2332,7 @@ __evict_page(WT_SESSION_IMPL *session, bool is_server)
 
     WT_TRACK_OP_INIT(session);
 
-    // TODO: reading here. 2020-10-19-17:05
+    // TODO: reading here. 2020-1-19-17:54
     WT_RET_TRACK(__evict_get_ref(session, is_server, &btree, &ref, &previous_state));
     WT_ASSERT(session, ref->state == WT_REF_LOCKED);
 
@@ -2481,6 +2505,7 @@ done:
 /*
  * __wt_page_evict_urgent --
  *     Set a page to be evicted as soon as possible.
+ * 将ref插入urgent_queue中，然后唤醒worker
  */
 bool
 __wt_page_evict_urgent(WT_SESSION_IMPL *session, WT_REF *ref)

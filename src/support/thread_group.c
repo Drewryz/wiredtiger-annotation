@@ -29,7 +29,8 @@ __thread_run(void *arg)
     for (;;) {
         if (!F_ISSET(thread, WT_THREAD_RUN))
             break;
-        if (!F_ISSET(thread, WT_THREAD_ACTIVE)) // 没有激活则等待条件变量
+        /* !!! 注意：没有激活才会等待条件变量 */
+        if (!F_ISSET(thread, WT_THREAD_ACTIVE)) 
             // 即使没有被主动唤醒，等待一段时间也会自己主动唤醒
             __wt_cond_wait(
               session, thread->pause_cond, WT_THREAD_PAUSE * WT_MILLION, thread->chk_func);

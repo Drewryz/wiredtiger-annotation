@@ -271,8 +271,6 @@ __split_prev_race(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp
  * __tree_walk_internal --
  *     Move to the next/previous page in the tree.
  */ 
-//     return (__tree_walk_internal(session, refp, NULL, NULL, NULL, flags));
-// 该函数后序遍历树，返回当前页的下一个页。关于树的后续遍历：https://zh.wikipedia.org/zh-hans/树的遍历
 /*
  * 该函数后序遍历树，返回当前页的下一个页。关于树的后续遍历：https://zh.wikipedia.org/zh-hans/树的遍历
  * refp: 当前页的引用
