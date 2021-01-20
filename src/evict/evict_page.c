@@ -40,6 +40,7 @@ __evict_exclusive(WT_SESSION_IMPL *session, WT_REF *ref)
     if (__wt_hazard_check(session, ref, NULL) == NULL)
         return (0);
 
+    /* 有线程正在访问ref页，返回EBUSY */
     WT_STAT_DATA_INCR(session, cache_eviction_hazard);
     WT_STAT_CONN_INCR(session, cache_eviction_hazard);
     return (__wt_set_return(session, EBUSY));
@@ -131,6 +132,7 @@ __wt_evict(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t previous_state, uint3
      * Get exclusive access to the page if our caller doesn't have the tree locked down.
      */
     if (!closing) {
+        /* 有其他线程访问，则goto到err */
         WT_ERR(__evict_exclusive(session, ref));
 
         /*
@@ -138,9 +140,11 @@ __wt_evict(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t previous_state, uint3
          * freeing the page memory or otherwise touching the reference because eviction paths assume
          * a non-NULL reference on the queue is pointing at valid memory.
          */
+        /* 将ref从evict_queue中移除 */
         __wt_evict_list_clear_page(session, ref);
     }
 
+    /* 上面的逻辑：如果有别的线程在访问，直接goto err. 到下面这一步，ref引用的页的state已经变为了LOCKED，并且没有其他线程在访问 */
     /*
      * Review the page for conditions that would block its eviction. If the check fails (for
      * example, we find a page with active children), quit. Make this check for clean pages, too:
@@ -456,6 +460,7 @@ __evict_child_check(WT_SESSION_IMPL *session, WT_REF *parent)
         case WT_REF_LOOKASIDE: /* On-disk, lookaside */
             break;
         default:
+            /* 如果子页还在内存中，返回EBUSY */
             return (__wt_set_return(session, EBUSY));
         }
     }
@@ -518,11 +523,19 @@ __evict_child_check(WT_SESSION_IMPL *session, WT_REF *parent)
     return (0);
 }
 
+/* 驱逐内存中的page,并将page中的修改数据落盘到磁盘上 */
 /*
  * __evict_review --
  *     Get exclusive access to the page and review the page and its subtree for conditions that
  *     would block its eviction.
- * 获得对该页的独占访问，并检查该页及其子树，以查看可能阻止其驱逐的条件。
+ * 1. 如果是内部页，检查内部页的子页是否是活跃的，如果是停止evict，返回EBUSY
+ * 2. 如果不能被evict，返回EBUSY，参见__wt_page_can_evict
+ * 3. 如果page是clean的，返回0，表示可以evict
+ * 4. reconcile。。。
+ * 
+ * TODO:
+ * 1. __wt_split_insert
+ * 2. reconcile
  */
 static int
 __evict_review(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t evict_flags, bool *inmem_splitp)
@@ -543,12 +556,14 @@ __evict_review(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t evict_flags, bool
     if (!WT_SESSION_BTREE_SYNC(session))
         LF_SET(WT_REC_VISIBLE_ALL);
 
+
     /*
      * Fail if an internal has active children, the children must be evicted first. The test is
      * necessary but shouldn't fire much: the eviction code is biased for leaf pages, an internal
      * page shouldn't be selected for eviction until all children have been evicted.
      */
     if (WT_PAGE_IS_INTERNAL(page)) {
+        /* reading here. 2021-1-20-17:46 */
         WT_WITH_PAGE_INDEX(session, ret = __evict_child_check(session, ref));
         if (ret != 0)
             WT_STAT_CONN_INCR(session, cache_eviction_fail_active_children_on_an_internal_page);
@@ -583,7 +598,6 @@ __evict_review(WT_SESSION_IMPL *session, WT_REF *ref, uint32_t evict_flags, bool
          */
         if (modified)
             WT_RET(__wt_txn_update_oldest(session, WT_TXN_OLDEST_STRICT));
-
         if (!__wt_page_can_evict(session, ref, inmem_splitp))
             return (__wt_set_return(session, EBUSY));
 

@@ -1177,7 +1177,7 @@ __evict_lru_pages(WT_SESSION_IMPL *session, bool is_server)
  *    a) 将队列中的entry，按照score，从低到高排序
  *    b) 在数组尾部丢弃一些entry
  *    c) 并不是队列中所有的page都要被evict，这一步确定有多少候选者将会被evict。参见queue->evict_candidates
- * 4. 应该是唤醒worker线程。__wt_cond_signal(session, S2C(session)->evict_threads.wait_cond);
+ * 4. 唤醒worker线程。__wt_cond_signal(session, S2C(session)->evict_threads.wait_cond);
  * TODO:
  * 1. WT为什么不采用这样的设计：将内存中所有的page组成lru链表，那么每次刷脏的时候直接取最近最久未使用的page做eviciton，那就不需要再遍历btree了。
  * 2. __evict_walk
@@ -1414,7 +1414,7 @@ __evict_walk_choose_dhandle(WT_SESSION_IMPL *session, WT_DATA_HANDLE **dhandle_p
  * 扫描整个connection中打开的btree索引文件，将能evict的btree page放入queue中
  * 
  * 1. 循环开始
- * 2. 选择一个b树做walk, 参见：__evict_walk_choose_dhandle
+ * 2. 随机选择一个b树做walk, 参见：__evict_walk_choose_dhandle
  * 3. 判断选择的b树是否需要eviciton，不需要继续进行第2步
  * 4. __evict_walk_tree
  * 5. 当向队列中加入足够多的page(WT_EVICT_WALK_INCR)，退出循环
@@ -2152,6 +2152,10 @@ fast:
 /*
  * __evict_get_ref --
  *     Get a page for eviction.
+ * 从队列中拿出一个page，该函数并未做实际的eviction操作
+ * btreep： 出参， 要驱逐的页所在的b树
+ * refp: 出参， 要驱逐的页的引用
+ * previous_statep: 出参，要驱逐的页.state
  */
 static int
 __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_REF **refp,
@@ -2173,14 +2177,17 @@ __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_
 
     cache = S2C(session)->cache;
     is_app = !F_ISSET(session, WT_SESSION_INTERNAL);
+    /* server_only: 表示只有server在做evciton */
     server_only = is_server && !WT_EVICT_HAS_WORKERS(session);
     /* Application threads do eviction when cache is full of dirty data */
+    /* ？？？？ */
     urgent_ok = (!is_app && !is_server) || !WT_EVICT_HAS_WORKERS(session) ||
       (is_app && F_ISSET(cache, WT_CACHE_EVICT_DIRTY_HARD));
     urgent_queue = cache->evict_urgent_queue;
 
     WT_STAT_CONN_INCR(session, cache_eviction_get_ref);
 
+    /* 队列没有page，直接退出 */
     /* Avoid the LRU lock if no pages are available. */
     if (__evict_queue_empty(cache->evict_current_queue, is_server) &&
       __evict_queue_empty(cache->evict_other_queue, is_server) &&
@@ -2206,6 +2213,7 @@ __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_
 
     __wt_spin_lock(session, &cache->evict_queue_lock);
 
+    /* 选取将要做eviction的queue */
     /* Check the urgent queue first. */
     if (urgent_ok && !__evict_queue_empty(urgent_queue, false))
         queue = urgent_queue;
@@ -2227,6 +2235,7 @@ __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_
 
     __wt_spin_unlock(session, &cache->evict_queue_lock);
 
+    /* 获取队列的lock */
     /*
      * We got the queue lock, which should be fast, and chose a queue. Now we want to get the lock
      * on the individual queue.
@@ -2252,6 +2261,7 @@ __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_
     if (is_server && queue != urgent_queue && candidates > 1)
         candidates /= 2;
 
+    /* 整个循环结束才会将队列的锁释放 */
     /* Get the next page queued for eviction. */
     for (evict = queue->evict_current;
          evict >= queue->evict_queue && evict < queue->evict_queue + candidates; ++evict) {
@@ -2315,8 +2325,8 @@ __evict_get_ref(WT_SESSION_IMPL *session, bool is_server, WT_BTREE **btreep, WT_
 /*
  * __evict_page --
  *     Called by both eviction and application threads to evict a page.
- * 拿到一个页面：__evict_get_ref
- * 然后做evict：__wt_evict
+ * 1. 拿到一个页面：__evict_get_ref
+ * 2. 然后做evict：__wt_evict
  */
 static int
 __evict_page(WT_SESSION_IMPL *session, bool is_server)
@@ -2358,6 +2368,7 @@ __evict_page(WT_SESSION_IMPL *session, bool is_server)
         }
     }
 
+    /* 提前更新ref->page的read_gen ??? */
     /*
      * In case something goes wrong, don't pick the same set of pages every time.
      *

@@ -1225,6 +1225,12 @@ __wt_btree_can_evict_dirty(WT_SESSION_IMPL *session)
 /*
  * __wt_leaf_page_can_split --
  *     Check whether a page can be split in memory.
+ * 检查leaf page是否可以在内存中分裂
+ * 1. 页不是页节点，false
+ * 2. 内存占用没有超过阈值，false
+ * 3. 没有被更改，false
+ * TODO:
+ * 1. 内部页何时分裂？
  */
 static inline bool
 __wt_leaf_page_can_split(WT_SESSION_IMPL *session, WT_PAGE *page)
@@ -1268,6 +1274,7 @@ __wt_leaf_page_can_split(WT_SESSION_IMPL *session, WT_PAGE *page)
     if (!__wt_page_is_modified(page))
         return (false);
 
+    /* ???? */
     /*
      * There is no point doing an in-memory split unless there is a lot of data in the last skiplist
      * on the page. Split if there are enough items and the skiplist does not fit within a single
@@ -1365,6 +1372,11 @@ __wt_page_evict_retry(WT_SESSION_IMPL *session, WT_PAGE *page)
 /*
  * __wt_page_can_evict --
  *     Check whether a page can be evicted.
+ * 1. 正在truncate的page不能被eviction
+ * 2. 判读page是否可以split，可以直接返回true。__wt_leaf_page_can_split
+ * 3. 如果page被修改过，但是page不能__wt_btree_can_evict_dirty，返回fasle
+ * 4. __wt_gen_active ？？？
+ * 5. 如果page没被修改过，但是有modify结构体，表示这个页很新，所以不能被eviciton
  */
 static inline bool
 __wt_page_can_evict(WT_SESSION_IMPL *session, WT_REF *ref, bool *inmem_splitp)
