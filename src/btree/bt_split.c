@@ -592,6 +592,7 @@ err:
 /*
  * __split_parent --
  *     Resolve a multi-page split, inserting new information into the parent.
+ * 在page split时向parent page中写入新的ref
  */
 static int
 __split_parent(WT_SESSION_IMPL *session, WT_REF *ref, WT_REF **ref_new, uint32_t new_entries,
@@ -1154,6 +1155,7 @@ err:
 /*
  * __split_internal_lock --
  *     Lock an internal page.
+ * 锁住父节点，加锁失败返回非0值
  */
 static int
 __split_internal_lock(WT_SESSION_IMPL *session, WT_REF *ref, bool trylock, WT_PAGE **parentp)
@@ -1188,14 +1190,17 @@ __split_internal_lock(WT_SESSION_IMPL *session, WT_REF *ref, bool trylock, WT_PA
 
         /* Encourage races. */
         __wt_timing_stress(session, WT_TIMING_STRESS_SPLIT_7);
-
+        /*
+         * WT保证：存在内存中的页节点，其父页也一定在内存中 
+         */
         /* Page locks live in the modify structure. */
         WT_RET(__wt_page_modify_init(session, parent));
 
-        if (trylock)
+        if (trylock) /* 加锁失败返回 */
             WT_RET(WT_PAGE_TRYLOCK(session, parent));
         else
             WT_PAGE_LOCK(session, parent);
+        /* ref的home域可能随时改变，所以这里要检查该域 */
         if (parent == ref->home)
             break;
         WT_PAGE_UNLOCK(session, parent);
@@ -1309,7 +1314,7 @@ __split_parent_climb(WT_SESSION_IMPL *session, WT_PAGE *page)
     for (;;) {
         parent = NULL;
         ref = page->pg_intl_parent_ref;
-
+        /* 我们要检测page是否需要分裂。__split_internal_should_split函数里，page->pg_intl_parent_ref.page 又是指向page本身了 */
         /* If we don't need to split the page, we're done. */
         if (!__split_internal_should_split(session, ref))
             break;
@@ -1676,6 +1681,9 @@ __wt_multi_to_ref(WT_SESSION_IMPL *session, WT_PAGE *page, WT_MULTI *multi, WT_R
 /*
  * __split_insert --
  *     Split a page's last insert list entries into a separate page.
+ * 整体上说是将一个page最右侧的insert跳表移动成一个新页，然后__split_parent
+ * TODO:
+ * 1. __split_parent
  */
 static int
 __split_insert(WT_SESSION_IMPL *session, WT_REF *ref)
@@ -2004,11 +2012,13 @@ __split_insert_lock(WT_SESSION_IMPL *session, WT_REF *ref)
 
     /* Lock the parent page, then proceed with the insert split. */
     WT_RET(__split_internal_lock(session, ref, true, &parent));
+    /* 到这一步，我们已经持有了父页的锁 */
     if ((ret = __split_insert(session, ref)) != 0) {
         __split_internal_unlock(session, parent);
         return (ret);
     }
 
+    /* 到了这一步，我们已经完成了叶节点的分裂，并且已经改写了父页的ref数组，接下来，我们要检查是否要分裂父页 */
     /*
      * Split up through the tree as necessary; we're holding the original parent page locked, note
      * the functions we call are responsible for releasing that lock.

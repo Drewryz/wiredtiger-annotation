@@ -72,6 +72,8 @@ __ref_index_slot(WT_SESSION_IMPL *session, WT_REF *ref, WT_PAGE_INDEX **pindexp,
                 goto found;
             }
         }
+
+        /* 如果没有在REF数组中找到本页引用，说明此时本页的父指针引用了父指针的父指针，此时自旋等待本页的父指针被split函数更新完成即可 */
         /*
          * We failed to get the page index and slot reference, yield before retrying, and if we've
          * yielded enough times, start sleeping so we don't burn CPU to no purpose.
@@ -398,6 +400,9 @@ restart:
      */
     /* Figure out the current slot in the WT_REF array. */
     __ref_index_slot(session, ref, &pindex, &slot);
+
+    /* TODO: 2021-1-21-21:43,  通过__ref_index_slot，拿到了pindex，那接下来呢？*/
+    /* 主要探究范围查询和父页分裂的关系 */
 
     for (;;) {
         /*

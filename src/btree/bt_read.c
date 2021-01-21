@@ -698,6 +698,11 @@ read:
             stalled = true;
             break;
         case WT_REF_LOCKED:
+            /*
+             * 对于请求的ref为LOCKED状态：
+             * 如果caller不允许等待，直接返回 NOTFOUND
+             * 如果caller允许等待，break，然后自旋一段时间，重试
+             */
             if (LF_ISSET(WT_READ_NO_WAIT))
                 return (WT_NOTFOUND);
 
