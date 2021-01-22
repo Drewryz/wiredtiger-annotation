@@ -398,6 +398,7 @@ restart:
      * 5. 了解并发方式之后再看__tree_walk_internal，不然没有太多价值
      * 先做第4个
      */
+    /* 获取ref所在的引用数组pindex，以及ref在该数组中的位置slot */
     /* Figure out the current slot in the WT_REF array. */
     __ref_index_slot(session, ref, &pindex, &slot);
 
@@ -527,7 +528,6 @@ descend:
                     break;
             }
 
-            // TODO: reading here 2020-9-21-12:00
             ret = __wt_page_swap(
               session, couple, ref, WT_READ_NOTFOUND_OK | WT_READ_RESTART_OK | flags);
             if (ret == 0) {

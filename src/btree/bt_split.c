@@ -357,6 +357,7 @@ __split_ref_prepare(
 
         WT_PAGE_LOCK(session, child);
 
+        /* 将旧页的REF数组的REF的home指向child */
         /* Switch the WT_REF's to their new page. */
         j = 0;
         WT_INTL_FOREACH_BEGIN (session, child, child_ref) {
@@ -880,6 +881,15 @@ err:
 /*
  * __split_internal --
  *     Split an internal page into its parent.
+ * page：需要分裂的内部页
+ * parent: page的父页
+ * 内部页分裂，步骤：
+ * 1. 计算当前页应该分裂成多少个children页，每个children应该承载多少个entries
+ * 2. 原始页的第一个chunk，继续保留在原始页中，计算原始页新的index数组，replace_index
+ * 3. 构建一个新的alloc_index数组，用于记录所有的分裂的页的WT_REF
+ * 4. 针对每一个新分裂的页，新建一个对应的WT_PAGE数据结构，然后将分裂的页的WT_REF与WT_PAGE建链
+ *    并且从旧分裂的页获取REF，设置新分裂的页的REF数组
+ * 5. 
  */
 static int
 __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
@@ -905,6 +915,7 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
 
     btree = S2BT(session);
     alloc_index = replace_index = NULL;
+    /* page_ref指向当前页的WT_REF */
     page_ref = page->pg_intl_parent_ref;
     locked = NULL;
     page_decr = page_incr = parent_incr = 0;
@@ -916,6 +927,11 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
      */
     pindex = WT_INTL_INDEX_GET_SAFE(page);
 
+    /* 
+     * 计算：
+     * 当前页应该分裂成多少个children页
+     * 每个children应该承载多少个entries
+     */
     /*
      * Decide how many child pages to create, then calculate the standard chunk and whatever
      * remains. Sanity check the number of children: the decision to split matched to the
@@ -928,6 +944,7 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
         children = 10;
     }
     chunk = pindex->entries / children;
+    /* ？？？ */
     remain = pindex->entries - chunk * (children - 1);
 
     __wt_verbose(session, WT_VERB_SPLIT,
@@ -939,7 +956,9 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
      * using it (for example, if eviction is walking the tree and looking at the page.) Instead,
      * perform a right-split, moving all except the first chunk of the page's WT_REF objects to new
      * pages.
-     *
+     * 理想情况下，我们应该丢弃原始页面，但这很难，因为其他控制线程正在使用它(例如，如果evction正在遍历树并查看页面)。
+     * 相反，执行right-split，将页面的WT_REF对象的第一个chunk以外的所有WT_REF对象移动到新的页面。
+     * 原始页的PAGE_INDEX将被替换成replace_index
      * Create and initialize a replacement WT_PAGE_INDEX for the original page.
      */
     size = sizeof(WT_PAGE_INDEX) + chunk * sizeof(WT_REF *);
@@ -947,9 +966,11 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
     page_incr += size;
     replace_index->index = (WT_REF **)(replace_index + 1);
     replace_index->entries = chunk;
+    /* page_refp指向原始页的index数组当前位置 */
     for (page_refp = pindex->index, i = 0; i < chunk; ++i)
         replace_index->index[i] = *page_refp++;
 
+    /* 这里有个疑问，当前页分裂不应该是往父页新增新的WT_REF吗？这里看起来为什么像是替换 */
     /*
      * Allocate a new WT_PAGE_INDEX and set of WT_REF objects to be inserted into the page's parent,
      * replacing the page's page-index.
@@ -963,8 +984,10 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
     alloc_index->index = (WT_REF **)(alloc_index + 1);
     alloc_index->entries = children;
     alloc_refp = alloc_index->index;
+    /* alloc_refp[0] = 当前页的WT_REF */
     *alloc_refp++ = page_ref;
     for (i = 1; i < children; ++alloc_refp, ++i)
+        /* 分配实际的REF数据结构到alloc_refp的元素中 */
         WT_ERR(__wt_calloc_one(session, alloc_refp));
     parent_incr += children * sizeof(WT_REF);
 
@@ -992,6 +1015,8 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
         ref->home = parent;
         ref->page = child;
         ref->addr = NULL;
+        /* 设置child的WT_REF的key */
+        /* 将当前child所有管理的REF数组的第一个REF的key作为child的WT_REF的key */
         if (page->type == WT_PAGE_ROW_INT) {
             __wt_ref_key(page, *page_refp, &p, &size);
             WT_ERR(__wt_row_ikey(session, 0, p, size, ref));
@@ -1017,6 +1042,7 @@ __split_internal(WT_SESSION_IMPL *session, WT_PAGE *parent, WT_PAGE *page)
          */
         child_pindex = WT_INTL_INDEX_GET_SAFE(child);
         child_incr = 0;
+        /* 针对每一个child页，从原始页复制REF到child页的REF数组中 */
         for (child_refp = child_pindex->index, j = 0; j < slots; ++child_refp, ++page_refp, ++j)
             WT_ERR(__split_ref_move(session, page, page_refp, &page_decr, child_refp, &child_incr));
 
@@ -1300,6 +1326,7 @@ __split_parent_climb(WT_SESSION_IMPL *session, WT_PAGE *page)
      * they'll split into their parent. And, as that parent page grows large enough and is evicted,
      * it splits into its parent and so on. When the page split wave reaches the root, the tree will
      * permanently deepen as multiple root pages are written.
+     * 当root节点页分裂时，此时树的深度增加
      *
      * However, this only helps if internal pages are evicted (and we resist evicting internal pages
      * for obvious reasons), or if the tree were to be closed and re-opened from a disk image, which
