@@ -6,6 +6,7 @@
  * See the file LICENSE for redistribution information.
  */
 
+/* txn.id不等于WT_TXN_NONE标识写事务 */
 #define	WT_TXN_NONE	0		/* No txn running in a session. */
 #define	WT_TXN_FIRST	1		/* First transaction to run. */
 #define	WT_TXN_ABORTED	UINT64_MAX	/* Update rolled back, ignore. */
@@ -70,6 +71,7 @@ struct __wt_named_snapshot {
 struct __wt_txn_state {
 	WT_CACHE_LINE_PAD_BEGIN
 	volatile uint64_t id;
+	/* ???? */
 	volatile uint64_t pinned_id;
 	volatile uint64_t metadata_pinned;
 	WT_CACHE_LINE_PAD_END
@@ -77,11 +79,13 @@ struct __wt_txn_state {
 
 struct __wt_txn_global {
 	WT_SPINLOCK id_lock;
+	/* WT用事务id表示事务的逻辑时钟 */
 	volatile uint64_t current;	/* Current transaction ID. */
 
 	/* The oldest running transaction ID (may race). */
 	volatile uint64_t last_running;
 
+	/* 系统中还在执行写的事务最早事务ID */
 	/*
 	 * The oldest transaction ID that is not yet visible to some
 	 * transaction in the system.
@@ -116,7 +120,9 @@ struct __wt_txn_global {
 	WT_RWLOCK nsnap_rwlock;
 	volatile uint64_t nsnap_oldest_id;
 	TAILQ_HEAD(__wt_nsnap_qh, __wt_named_snapshot) nsnaph;
-
+	/* 该数据结构是个数组，记录了系统中每个session的事务状态即系统中所有的事务, 参见WT_SESSION_TXN_STATE
+	 * 通过states[session.id]可以获取每个session对应的WT_TXN_STATE
+	 */
 	WT_TXN_STATE *states;		/* Per-session transaction states */
 };
 
@@ -168,6 +174,7 @@ struct __wt_txn_op {
  *	Per-session transaction context.
  */
 struct __wt_txn {
+	/* 本次事务的全局唯一的ID，用于标示事务修改数据的版本号 */
 	uint64_t id;
 
 	WT_TXN_ISOLATION isolation;
@@ -181,10 +188,12 @@ struct __wt_txn {
 	 *	everything else is visible unless it is in the snapshot.
 	 */
 	uint64_t snap_min, snap_max;
+	/* 当前事务开始或者操作时刻其他正在执行且并未提交的事务集合, snapshot_count是集合的size*/
 	uint64_t *snapshot;
 	uint32_t snapshot_count;
 	uint32_t txn_logsync;	/* Log sync configuration */
 
+	/* mod是当前事务操作数组，用于事务回滚 */
 	/* Array of modifications by this transaction. */
 	WT_TXN_OP      *mod;
 	size_t		mod_alloc;

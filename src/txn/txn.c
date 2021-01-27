@@ -107,6 +107,21 @@ __wt_txn_release_snapshot(WT_SESSION_IMPL *session)
 /*
  * __wt_txn_get_snapshot --
  *	Allocate a snapshot.
+ * 1. 遍历全体活跃事务数组，找到还在写的事务。这里的还在写表示：
+ *    a. 事务的id大于oldest_id
+ *    b. 并且事务的id不为WT_TXN_NONE
+ * 2. 将上面获得的正在写的事务按照事务id的顺序从小到大排序，设置当前事务的snap_min snap_max，参见__txn_sort_snapshot
+ * 
+ * TODO:
+ * 1. 全局事务数组是怎么构建组织的
+ * 	参考__wt_txn_global_init函数
+ * 	全局事务数组的size为conn->session_size，就是说想要获取每个session的事务状态，通过global_txn.states[session.id]就可以了
+ *  那问题是WT的session个数是确定的吗？是的，参见http://source.wiredtiger.com/3.2.1/group__wt.html#gacbe8d118f978f5bfc8ccb4c77c9e8813
+ * 2. 每个事务的pinned_id表示什么 prev_oldest_id <= pinned_id
+ * 3. txn_global->scan_rwlock 用于保护什么
+ * 4. 事务的id是什么时候分配的？参考__wt_txn_id_check, __wt_txn_id_alloc
+ * 5. __txn_oldest_scan是干嘛用的
+ *  
  */
 void
 __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
@@ -122,6 +137,7 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
 	conn = S2C(session);
 	txn = &session->txn;
 	txn_global = &conn->txn_global;
+	/* 获取当前事务的txn_state */
 	txn_state = WT_SESSION_TXN_STATE(session);
 	n = 0;
 
@@ -150,6 +166,11 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
 		goto done;
 	}
 
+	/*
+	 * 遍历全体活跃事务数组，找到还在写的事务。这里的还在写表示：
+	 * 1. 事务的id大于oldest_id
+	 * 2. 并且事务的id不为WT_TXN_NONE
+	 */
 	/* Walk the array of concurrent transactions. */
 	WT_ORDERED_READ(session_cnt, conn->session_cnt);
 	for (i = 0, s = txn_global->states; i < session_cnt; i++, s++) {
@@ -181,6 +202,12 @@ __wt_txn_get_snapshot(WT_SESSION_IMPL *session)
 	txn_state->pinned_id = pinned_id;
 
 done:	__wt_readunlock(session, &txn_global->scan_rwlock);
+	/*
+	 * 将上面获得的正在写的事务按照事务id的顺序从小到大排序，设置当前事务的snap_min snap_max
+	 * 1. snap_array中的事务对于当前事务来说是不可见的 
+	 * 2. 小于snap_min的事务一定可见
+	 * 2. 大于snap_max的事务一定不可见
+	 */
 	__txn_sort_snapshot(session, n, current_id);
 }
 
