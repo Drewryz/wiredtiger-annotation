@@ -264,6 +264,9 @@ struct __wt_logslot {
         WT_WITH_LOCK_WAIT(session, &(log)->log_slot_lock, WT_SESSION_LOCKED_SLOT, op); \
     } while (0)
 
+/*
+ * myslot记录了当前事务要写的slot  
+ */
 struct __wt_myslot {
     WT_LOGSLOT *slot;    /* Slot I'm using */
     /* end_offset的唯一作用是用来判断记录的txn.record是否为unbuffered*/

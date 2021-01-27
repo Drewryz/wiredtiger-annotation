@@ -533,11 +533,16 @@ __wt_log_slot_destroy(WT_SESSION_IMPL *session)
 /*
  * __wt_log_slot_join --
  *     Join a consolidated logging slot.
- *     加入统一的日志记录槽。这注释真是没谁了。。。
- *     总体来说，通过这个函数可以获取日志插入的位置，位置信息通过myslot返回。该函数并没有实际向slot复制数据
+ *  总体来说，通过这个函数可以获取日志插入的位置，位置信息通过myslot返回。该函数并没有实际向slot复制数据。
  *  mysize是申请join的日志size
  *  flags是txn->txn_logsync
  *  myslot是传出参数，用于记录join的结果
+ * 1. 在active_slot中获取日志要插入在slot的偏移，偏移信息以及slot信息通过myslot返回
+ * 2. 根据传入的txn->txn_logsync设置对应slot的flag，应该用于最后如何处理日志落盘的时候使用
+ * 该函数并没有实际向slot复制数据，且该函数完全无锁
+ * 一个OPEN的active_slot不停地join日志最后偏移会会满掉，此时新来的事务会不停地burning cpu cycles, 等待新的active_slot
+ * TODO:
+ * 1. 如果WT_LOG_SLOT_OPEN失败，谁来重新OPEN slot？参考__log_slot_new
  */
 void
 __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT_MYSLOT *myslot)

@@ -2517,7 +2517,13 @@ __wt_log_force_write(WT_SESSION_IMPL *session, bool retry, bool *did_work)
 /*
  * __wt_log_write --
  *     Write a record into the log, compressing as necessary.
- * record is txn->logrec
+ * WAL写日志的入口函数
+ * record：记录了事务的每一条数据更改操作
+ * flags: 事务的日志sync配置，参考txn->txn_logsync
+ * 该函数的逻辑：
+ * 1. 日志功能没有开启直接退出
+ * 2. 获取日志压缩和加密配置，并做一些操作
+ * 3. 调用__log_write_internal
  */
 int
 __wt_log_write(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, uint32_t flags)
@@ -2537,6 +2543,10 @@ __wt_log_write(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, uint32_t
 
     conn = S2C(session);
     log = conn->log;
+
+    /*
+     * 日志功能没有开启直接退出 
+     */
     /*
      * An error during opening the logging subsystem can result in it being enabled, but without an
      * open log file. In that case, just return. We can also have logging opened for reading in a
@@ -2632,9 +2642,12 @@ err:
 /*
  * __log_write_internal --
  *     Write a record into the log.
+ * record: 记录了事务的每一条数据更改操作
  * flags: 来源于txn->txn_logsync
  * lsnp: NULL
- *
+ * 主要步骤：
+ * 1. 如果record大小不足log->allocsize，则在record后填充0
+ * 2. 获取当前事务要写的slot，用myslot返回，参见__wt_log_slot_join
  */
 static int
 __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, uint32_t flags)
@@ -2657,6 +2670,9 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
                                    "supported size of %" PRIu32,
           record->size, UINT32_MAX);
     WT_INIT_LSN(&lsn);
+    /*
+     * myslot记录了当前事务要写的slot 
+     */
     myslot.slot = NULL;
     memset(&myslot, 0, sizeof(myslot)); // 这里既然要清空memset，那为什么需要上一步
     /*
@@ -2725,6 +2741,7 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
      * The only time joining a slot should ever return an error is if it detects a panic.
      */
     __wt_log_slot_join(session, rdup_len, flags, &myslot);
+    /* reading here. 2021-1-27 */
     /*
      * If the addition of this record crosses the buffer boundary, switch in a new slot.
      */
