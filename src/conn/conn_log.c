@@ -793,6 +793,7 @@ restart:
 /*
  * __log_wrlsn_server --
  *     The log wrlsn server thread.
+ * 该线程用于刷新log的write_lsn
  */
 static WT_THREAD_RET
 __log_wrlsn_server(void *arg)

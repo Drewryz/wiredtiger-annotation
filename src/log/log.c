@@ -140,6 +140,7 @@ err:
 /*
  * __log_wait_for_earlier_slot --
  *     Wait for write_lsn to catch up to this slot.
+ * 等待的过程让出cpu，此时os需要调度该线程
  */
 static void
 __log_wait_for_earlier_slot(WT_SESSION_IMPL *session, WT_LOGSLOT *slot)
@@ -726,6 +727,10 @@ __log_decrypt(WT_SESSION_IMPL *session, WT_ITEM *in, WT_ITEM *out)
  *     Copy a thread's log records into the assigned slot.
  *     对于溢出的日志，该函数会直接将该日志写入文件
  *     ret = __wt_log_fill(session, &myslot, false, record, &lsn);
+ * lsnp: 传出参数，记录了当前日志在WAL日志文件中结束的LSN
+ * 一般情况：将当前事务的日志复制到之前申请的slot缓冲区中
+ * 如果强制写文件，或者当前事务的日志size太大无法写入缓冲区，则直接写入文件中
+ * 
  */
 int
 __wt_log_fill(
@@ -1349,10 +1354,13 @@ err:
  * __wt_log_acquire --
  *     Called serially when switching slots. Can be called recursively from __log_newfile when we
  *     change log files.
+ * 
+ * recsize： 表示slot buffer的大小，用于检测如果新的slot也写入日志文件，日志文件的大小是否会超过配置的阈值
+ *
  * 这个函数主要做了三个事情：
  * 1. 根据log的alloc lsn设置slot的release lsn
- * 2. 如果log的空间不足以装下slot的recsize，则新建log文件
- * 3. 将slot初始化成activation slot
+ * 2. 如果log的空间不足以装下slot的recsize，则新建log文件，新建日志文件会重新设置全局lsn, 参见__log_newfile
+ * 3. 将slot初始化成activation slot，新激活的activation slot的slot_start_lsn从全局lsn开始。参见__wt_log_slot_activate
  */
 int
 __wt_log_acquire(WT_SESSION_IMPL *session, uint64_t recsize, WT_LOGSLOT *slot)
@@ -1883,7 +1891,7 @@ __log_check_partial_write(WT_SESSION_IMPL *session, WT_ITEM *buf, uint32_t recle
  * 2. 根据slot的配置，如果不需要立刻刷盘，则将刷盘动作交给worker。
  *    交给worker的过程也很简单：只需要将slot的state置为WT_LOG_SLOT_WRITTEN
  * 3. 对于需要立刻刷盘的slot，要经历下面几个步骤：
- *    1). 等待较早的slot刷盘完成. TODO: 怎么等待的
+ *    1). 等待较早的slot刷盘完成. TODO: __log_wait_for_earlier_slot
  *    2). 设置log->write_lsn, signal log_write_cond
  *    3). 真正做fsync
  */
@@ -1955,6 +1963,9 @@ __wt_log_release(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *freep)
         return (0);
     }
 
+    /*
+     * 以下逻辑用来处理需要及时刷盘的slot，为了避免日志文件中日志产生空洞，需要将之前的没有刷盘的日志先刷盘，参考__log_wait_for_earlier_slot
+     */
     // reading here. 2020-11-19-21:32
     /*
      * Wait for earlier groups to finish, otherwise there could be holes in the log file.
@@ -2638,7 +2649,6 @@ err:
     return (ret);
 }
 
-// reading here. 2020-11-13-19:59
 /*
  * __log_write_internal --
  *     Write a record into the log.
@@ -2647,7 +2657,15 @@ err:
  * lsnp: NULL
  * 主要步骤：
  * 1. 如果record大小不足log->allocsize，则在record后填充0
- * 2. 获取当前事务要写的slot，用myslot返回，参见__wt_log_slot_join
+ * 2. 获取当前事务要写的slot，并预先申请一些buffer，用myslot返回，参见__wt_log_slot_join
+ * 3. 如果当前事务在slot中申请的空间已经超过了阈值，则切换active_slot, __wt_log_slot_switch
+ * 4. 填充之前申请的slot空间，参见__wt_log_fill
+ * 5. 设置当前slot的released size，参见__wt_log_slot_release
+ * 6. 根据released size判断是否所有事务的日志都已经拷贝到了slot中，是的话做__wt_log_release
+ * 
+ * TODO: 
+ * flags
+ * 线程间交互
  */
 static int
 __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, uint32_t flags)
@@ -2752,13 +2770,13 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
      */
     if (myslot.end_offset >= WT_LOG_SLOT_BUF_MAX || F_ISSET(&myslot, WT_MYSLOT_UNBUFFERED) || force)
         ret = __wt_log_slot_switch(session, &myslot, true, false, NULL);
-    // reading here. 2020-11-18-21:34
+    // reading here. 2020-1-28-15:31
     if (ret == 0)
         ret = __wt_log_fill(session, &myslot, false, record, &lsn);
+    
     /*
-     * TODO: 考虑多线程的行为 
+     * 设置当前slot的released size 
      */
-    // reading here. 2020-11-17-17:28
     release_size = __wt_log_slot_release(&myslot, (int64_t)rdup_len);
     /*
      * If we get an error we still need to do proper accounting in the slot fields. XXX On error we
@@ -2767,6 +2785,8 @@ __log_write_internal(WT_SESSION_IMPL *session, WT_ITEM *record, WT_LSN *lsnp, ui
     if (ret != 0)
         myslot.slot->slot_error = ret;
     WT_ASSERT(session, ret == 0);
+
+    /* readng here. 2021-1-28-16:30 */
     /*
      * 每个线程往slot写日志经历了下面几个阶段：
      * 1. 申请slot的offset，此时更改了slot.joined域，参见：__wt_log_slot_join

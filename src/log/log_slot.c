@@ -84,12 +84,13 @@ __wt_log_slot_activate(WT_SESSION_IMPL *session, WT_LOGSLOT *slot)
     WT_PUBLISH(slot->slot_state, 0);
 }
 
-// reading here. 2020-11-16-17:39
+// reading here. 2021-1-28-11:31
 /*
  * __log_slot_close --
  *     Close out the slot the caller is using. The slot may already be closed or freed by another
  *     thread. 
- *  close 当前slot，然后设置log lsn信息
+ *  close当前slot，然后设置log lsn信息
+ * releasep: 传出参数，表示对于当前slot，事务线程join的空间和已经写入slot的空间相等，可以将slot的数据写入日志文件了
  */
 static int
 __log_slot_close(WT_SESSION_IMPL *session, WT_LOGSLOT *slot, bool *releasep, bool forced)
@@ -231,6 +232,15 @@ __log_slot_dirty_max_check(WT_SESSION_IMPL *session, WT_LOGSLOT *slot)
 /*
  * __log_slot_new --
  *     Find a free slot and switch it as the new active slot. Must be called holding the slot lock.
+ * 设置新的slot
+ * 1. 获取第一个的free slot，然后激活该slot，激活函数参见__wt_log_acquire
+ * 2. 找不到空闲的slot，做下面三件事，然后继续循环
+ *    a. 通知worker
+ *    b. 释放log slot锁
+ *    c. 让出cpu
+ * TODO:
+ * 1. log_wrlsn_cond （WAL线程模型）
+ * reading here. 2021-1-28-12:23
  */
 static int
 __log_slot_new(WT_SESSION_IMPL *session)
@@ -317,11 +327,18 @@ __log_slot_new(WT_SESSION_IMPL *session)
     /* NOTREACHED */
 }
 
-// ret = __wt_log_slot_switch(session, &myslot, false, NULL);
 /*
  * __log_slot_switch_internal --
  *     Switch out the current slot and set up a new one.
  * forced：表示强制切slot
+ * 流程：
+ * 1. 如果slot未被close，则close掉，参见__log_slot_close
+ * 2. 设置新的active slot, 参考__log_slot_new
+ * 3. 如果被close掉的slot，join的空间和已经写入slot的空间相等，则将slot的数据写入文件, 参见__wt_log_release
+ * 
+ * TODO:
+ * 1. WT_MYSLOT_CLOSE标识的作用
+ * 2. 如果join的空间和已经写入的slot空间不相等，slot的数据何时往日志文件中写
  */
 static int
 __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool forced, bool *did_work)
@@ -376,6 +393,8 @@ __log_slot_switch_internal(WT_SESSION_IMPL *session, WT_MYSLOT *myslot, bool for
         if (release)
             F_SET(myslot, WT_MYSLOT_NEEDS_RELEASE);
     }
+
+    /* reading here. 2021-1-28-12:04 */
     /*
      * Now that the slot is closed, set up a new one so that joining threads don't have to wait on
      * writing the previous slot if we release it. Release after setting a new one.
@@ -671,7 +690,7 @@ __wt_log_slot_join(WT_SESSION_IMPL *session, uint64_t mysize, uint32_t flags, WT
  * __wt_log_slot_release --
  *     Each thread in a consolidated group releases its portion to signal it has completed copying
  *     its piece of the log into the memory buffer. 合并组中的每个线程释放其部分，以表示它已完成将其日志片段复制到内存缓冲区中。
- *     这里设置slot的release size，但是并没有实际往磁盘写入数据。所以，slot.release并不表示往磁盘写了多少数据。
+ *     置slot的released size
  */
 int64_t
 __wt_log_slot_release(WT_MYSLOT *myslot, int64_t size)
@@ -682,6 +701,11 @@ __wt_log_slot_release(WT_MYSLOT *myslot, int64_t size)
 
     slot = myslot->slot;
     my_start = slot->slot_start_offset + myslot->offset;
+
+    /*
+     * 这里用一个循环等待前置的线程将数据拷贝到slot buffer中,
+     * 循环等待的原因是为了使得得到的released size是准确的
+     */
     /*
      * We maintain the last starting offset within this slot. This is used to know the offset of the
      * last record that was written rather than the beginning record of the slot.
